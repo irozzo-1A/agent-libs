@@ -173,9 +173,7 @@ static const std::vector<gvisor_point_info_t> s_gvisor_points = {
         {"syscall/sysno/11/enter", {"time", "thread_id", "container_id"}, {}},
         {"syscall/sysno/11/exit", {"time", "thread_id", "container_id"}, {}}};
 
-constexpr unsigned int max_retries = 3;
-
-std::string generate(const std::string &socket_path) {
+std::string generate(const std::string &socket_path, unsigned int max_retries) {
 	Json::Value jpoints;
 	for(const auto &point_info : s_gvisor_points) {
 		Json::Value jpoint;

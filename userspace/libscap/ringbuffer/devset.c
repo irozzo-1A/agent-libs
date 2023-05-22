@@ -45,6 +45,52 @@ int32_t devset_init(struct scap_device_set *devset, size_t num_devs, char *laste
 	}
 	devset->m_buffer_empty_wait_time_us = BUFFER_EMPTY_WAIT_TIME_US_START;
 	devset->m_lasterr = lasterr;
+	devset->m_alloc_devs = num_devs;
+
+	return SCAP_SUCCESS;
+}
+
+int32_t devset_grow(struct scap_device_set *devset, size_t num_devs, char *lasterr) {
+	devset->m_ndevs = num_devs;
+	scap_device *devs, *orig_devs = devset->m_devs;
+
+	if(devset->m_alloc_devs >= num_devs) {
+		return SCAP_SUCCESS;
+	}
+
+	// don't touch m_devs from another thread while we're reallocating
+	//
+	// Note: this is only designed to guard a single writer against a single reader
+	// (i.e. one thread calling devset_grow, another handing out buffers from
+	// an allocated m_devs array)
+	devset->m_devs = NULL;
+	__sync_synchronize();
+
+	devs = (scap_device *)realloc(orig_devs, sizeof(scap_device) * devset->m_ndevs);
+	if(!devs) {
+		devset->m_devs = orig_devs;
+		strlcpy(lasterr, "error allocating the device handles", SCAP_LASTERR_SIZE);
+		return SCAP_FAILURE;
+	}
+
+	for(size_t j = devset->m_alloc_devs; j < num_devs; ++j) {
+		memset(&devs[j], 0, sizeof devs[j]);
+		devs[j].m_buffer = INVALID_MAPPING;
+		devs[j].m_bufinfo = INVALID_MAPPING;
+		devs[j].m_bufstatus = INVALID_MAPPING;
+		devs[j].m_fd = INVALID_FD;
+		devs[j].m_bufinfo_fd = INVALID_FD;
+		devs[j].m_lastreadsize = 0;
+		devs[j].m_sn_len = 0;
+		devs[j].m_state = DEV_CLOSED;
+	}
+
+	devset->m_devs = devs;
+
+	// ensure m_devs is written before m_alloc_devs
+	__sync_synchronize();
+
+	devset->m_alloc_devs = num_devs;
 
 	return SCAP_SUCCESS;
 }

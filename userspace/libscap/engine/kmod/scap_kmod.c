@@ -493,6 +493,7 @@ int32_t scap_kmod_init(scap_t *handle, scap_open_args *oargs) {
 		dev->m_bufinfo_size = sizeof(struct ppm_ring_buffer_info);
 
 		++online_idx;
+		dev->m_state = DEV_OPEN;
 	}
 
 	// Check that we parsed all online CPUs

@@ -127,6 +127,10 @@ static inline bool are_buffers_empty(struct scap_device_set* devset) {
 	uint32_t j;
 
 	for(j = 0; j < devset->m_ndevs; j++) {
+		if(devset->m_devs[j].m_state != DEV_OPEN) {
+			continue;
+		}
+
 		if(buf_size_used(&devset->m_devs[j]) > BUFFER_EMPTY_THRESHOLD_B) {
 			return false;
 		}
@@ -150,6 +154,9 @@ static inline int32_t refill_read_buffers(struct scap_device_set* devset) {
 	/* In any case (potentially also after a `sleep`) we refill our buffers */
 	for(j = 0; j < ndevs; j++) {
 		struct scap_device* dev = &(devset->m_devs[j]);
+		if(dev->m_state != DEV_OPEN) {
+			continue;
+		}
 
 		int32_t res = READBUF(dev, &dev->m_sn_next_event, &dev->m_sn_len);
 
@@ -215,6 +222,10 @@ static inline int32_t ringbuffer_next(struct scap_device_set* devset,
 	for(j = 0; j < ndevs; j++) {
 		scap_device* dev = &(devset->m_devs[j]);
 
+		if(dev->m_state != DEV_OPEN) {
+			continue;
+		}
+
 		/* `dev->m_sn_len` and `dev->m_lastreadsize` initially contain the dimension
 		 * of the full buffer block we have read in `refill_read_buffers`.
 		 * The difference is that `dev->m_sn_len` is decreased at every new event
@@ -245,7 +256,24 @@ static inline int32_t ringbuffer_next(struct scap_device_set* devset,
 				ADVANCE_TAIL(dev);
 			}
 
-			continue;
+			if(devset->m_used_devs != 0) {
+				/*
+				 * For dynamic devsets (that can grow/shrink over time), check for new events
+				 * immediately during the loop. Otherwise, we risk delaying events from the new
+				 * devices until we consume all events from existing devices.
+				 *
+				 * This leads to ordering issues, where we e.g. emit procexit from ptrace
+				 * before the actual events coming from the process (via libudigembed).
+				 */
+				READBUF(dev, &dev->m_sn_next_event, &dev->m_sn_len);
+				uint64_t head, tail, read_size;
+				GET_BUF_POINTERS(dev, &head, &tail, &read_size);
+				if(read_size == 0) {
+					continue;
+				}
+			} else {
+				continue;
+			}
 		}
 
 		/* Get the next event from the block */

@@ -2028,6 +2028,10 @@ static int32_t init(scap_t *handle, scap_open_args *oargs) {
 		return rc;
 	}
 
+	for(int i = 0; i < num_devs; ++i) {
+		HANDLE(engine)->m_dev_set.m_devs[i].m_state = DEV_OPEN;
+	}
+
 	/* Here we need to load maps and progs but we shouldn't attach tracepoints */
 	rc = scap_bpf_load(engine.m_handle, bpf_probe_buf, oargs);
 	if(rc != SCAP_SUCCESS) {

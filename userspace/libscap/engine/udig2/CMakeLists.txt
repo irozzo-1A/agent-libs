@@ -20,4 +20,4 @@ add_dependencies(scap_engine_udig uthash)
 target_include_directories(
 	scap_engine_udig PRIVATE ${UTHASH_INCLUDE} ${LIBS_DIR} ${LIBS_DIR}/userspace/
 )
-target_link_libraries(scap_engine_udig pthread rt)
+target_link_libraries(scap_engine_udig scap_engine_util pthread rt)

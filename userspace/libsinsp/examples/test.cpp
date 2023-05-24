@@ -40,6 +40,20 @@ extern "C" {
 }
 #endif  // _WIN32
 
+#if defined(__GNUC__)
+#if defined(__x86_64__)
+#include "../../../driver/syscall_compat_x86_64.h"
+#elif defined(__aarch64__)
+#include "../../../driver/syscall_compat_aarch64.h"
+#elif defined(__s390x__)
+#include "../../../driver/syscall_compat_s390x.h"
+#endif /* __x86_64__ */
+#elif defined(_MSC_VER)
+// these are Linux syscall numbers and obviously meaningless for Windows/macOS
+// but we need *some* definition so that we have a mapping for scap_ppm_sc.c
+#include "../../../driver/syscall_compat_x86_64.h"
+#endif /* __GNUC__ */
+
 using namespace std;
 
 // Functions used for dumping to stdout
@@ -103,6 +117,7 @@ Options:
   -b <path>, --bpf <path>                    BPF probe.
   -m, --modern_bpf                           modern BPF probe.
   -k, --kmod                                 Kernel module
+  -u, --user                                 Userspace engine (udig)
   -s <path>, --scap_file <path>              Scap file
   -d <dim>, --buffer_dim <dim>               Dimension in bytes that every per-CPU buffer will have.
   -o <fields>, --output-fields <fields>      Output fields string (see <filter> for supported display fields) that overwrites default output fields for all events. * at the beginning prints JSON keys with null values, else no null fields are printed.
@@ -127,6 +142,7 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 	                                       {"bpf", required_argument, 0, 'b'},
 	                                       {"modern_bpf", no_argument, 0, 'm'},
 	                                       {"kmod", no_argument, 0, 'k'},
+	                                       {"user", no_argument, 0, 'u'},
 	                                       {"scap_file", required_argument, 0, 's'},
 	                                       {"buffer_dim", required_argument, 0, 'd'},
 	                                       {"output-fields", required_argument, 0, 'o'},
@@ -142,7 +158,7 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 	bool format_set = false;
 	int op;
 	int long_index = 0;
-	while((op = getopt_long(argc, argv, "hf:jab:mks:d:o:En:zxqgr", long_options, &long_index)) !=
+	while((op = getopt_long(argc, argv, "hf:jab:mkus:d:o:En:zxqgr", long_options, &long_index)) !=
 	      -1) {
 		switch(op) {
 		case 'h':
@@ -172,6 +188,9 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 			break;
 		case 'k':
 			engine_string = KMOD_ENGINE;
+			break;
+		case 'u':
+			engine_string = UDIG_ENGINE;
 			break;
 		case 's':
 			engine_string = SAVEFILE_ENGINE;
@@ -292,6 +311,11 @@ void open_engine(sinsp& inspector, libsinsp::events::set<ppm_sc_code> events_sc_
 #ifdef HAS_ENGINE_MODERN_BPF
 	else if(!engine_string.compare(MODERN_BPF_ENGINE)) {
 		inspector.open_modern_bpf(buffer_bytes_dim, DEFAULT_CPU_FOR_EACH_BUFFER, true, ppm_sc);
+	}
+#endif
+#ifdef HAS_ENGINE_UDIG
+	else if(!engine_string.compare(UDIG_ENGINE)) {
+		inspector.open_udig();
 	}
 #endif
 	else {

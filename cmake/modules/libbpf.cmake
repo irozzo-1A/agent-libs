@@ -26,6 +26,12 @@ elseif(NOT USE_BUNDLED_LIBBPF)
 		message(FATAL_ERROR "Couldn't find system libbpf")
 	endif()
 else()
+	if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+		# The really old unistd.h in our x86_64 builder doesn't have a definition for the bpf()
+		# system call number.  So we will pass that definition in via libbpf's CFLAGS
+		set(ARCH_SPECIFIC_CFLAGS "-D__NR_bpf=321")
+	endif()
+
 	include(zlib)
 	include(libelf)
 	set(LIBBPF_SRC "${PROJECT_BINARY_DIR}/libbpf-prefix/src")
@@ -40,11 +46,11 @@ else()
 		URL_HASH "SHA256=11db86acd627e468bc48b7258c1130aba41a12c4d364f78e184fd2f5a913d861"
 		CONFIGURE_COMMAND mkdir -p build root
 		BUILD_COMMAND
-			make BUILD_STATIC_ONLY=y OBJDIR=${LIBBPF_BUILD_DIR}/build
-			DESTDIR=${LIBBPF_BUILD_DIR}/root NO_PKG_CONFIG=1
-			"EXTRA_CFLAGS=-fPIC -I${LIBELF_INCLUDE} -I${ZLIB_INCLUDE}" "LDFLAGS=-Wl,-Bstatic"
-			"EXTRA_LDFLAGS=-L${LIBELF_SRC}/libelf/libelf -L${ZLIB_SRC}" -C ${LIBBPF_SRC}/libbpf/src
-			install install_uapi_headers
+			make "CFLAGS=${ARCH_SPECIFIC_CFLAGS} -g -O2 -Werror -Wall -std=gnu89"
+			BUILD_STATIC_ONLY=y OBJDIR=${LIBBPF_BUILD_DIR}/build DESTDIR=${LIBBPF_BUILD_DIR}/root
+			NO_PKG_CONFIG=1 "EXTRA_CFLAGS=-fPIC -I${LIBELF_INCLUDE} -I${ZLIB_INCLUDE}"
+			"LDFLAGS=-Wl,-Bstatic" "EXTRA_LDFLAGS=-L${LIBELF_SRC}/libelf/libelf -L${ZLIB_SRC}" -C
+			${LIBBPF_SRC}/libbpf/src install install_uapi_headers
 		INSTALL_COMMAND ""
 		UPDATE_COMMAND ""
 		BUILD_BYPRODUCTS ${LIBBPF_LIB}

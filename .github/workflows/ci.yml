@@ -122,7 +122,7 @@ jobs:
       - name: Install
         run: |
           cd build
-          make install
+          KERNELDIR=/lib/modules/$(ls /lib/modules)/build make install
 
       - name: Test sinsp-example build with pkg-config
         run: |
@@ -312,7 +312,7 @@ jobs:
                 ${{ matrix.cmake_opts }} \
                 -DUSE_BUNDLED_LIBBPF=ON \
                 ..
-          make -j$(nproc) sinsp-example driver bpf
+          KERNELDIR=/lib/modules/$(ls /lib/modules)/build make -j$(nproc) sinsp-example driver bpf
           sudo -E make e2e-install-deps
           sudo -E ../test/e2e/scripts/run_tests.sh
 

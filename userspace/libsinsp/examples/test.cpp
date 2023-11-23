@@ -70,9 +70,10 @@ static bool ppm_sc_repair_state = false;
 static bool ppm_sc_state_remove_io_sc = false;
 static bool enable_glogger = false;
 static string engine_string = KMOD_ENGINE; /* Default for backward compatibility. */
-static string filter_string = "";
-static string file_path = "";
-static string bpf_path = "";
+static string filter_string;
+static string file_path;
+static string bpf_path;
+static string udig_path;
 static unsigned long buffer_bytes_dim = DEFAULT_DRIVER_BUFFER_BYTES_DIM;
 static uint64_t max_events = UINT64_MAX;
 static sinsp_filter_check_list s_filterlist;
@@ -117,7 +118,7 @@ Options:
   -b <path>, --bpf <path>                    BPF probe.
   -m, --modern_bpf                           modern BPF probe.
   -k, --kmod                                 Kernel module
-  -u, --user                                 Userspace engine (udig)
+  -u <path>, --user <path>                   Userspace engine (udig)
   -s <path>, --scap_file <path>              Scap file
   -d <dim>, --buffer_dim <dim>               Dimension in bytes that every per-CPU buffer will have.
   -o <fields>, --output-fields <fields>      Output fields string (see <filter> for supported display fields) that overwrites default output fields for all events. * at the beginning prints JSON keys with null values, else no null fields are printed.
@@ -142,7 +143,7 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 	                                       {"bpf", required_argument, 0, 'b'},
 	                                       {"modern_bpf", no_argument, 0, 'm'},
 	                                       {"kmod", no_argument, 0, 'k'},
-	                                       {"user", no_argument, 0, 'u'},
+	                                       {"user", required_argument, 0, 'u'},
 	                                       {"scap_file", required_argument, 0, 's'},
 	                                       {"buffer_dim", required_argument, 0, 'd'},
 	                                       {"output-fields", required_argument, 0, 'o'},
@@ -158,7 +159,7 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 	bool format_set = false;
 	int op;
 	int long_index = 0;
-	while((op = getopt_long(argc, argv, "hf:jab:mkus:d:o:En:zxqgr", long_options, &long_index)) !=
+	while((op = getopt_long(argc, argv, "hf:jab:mku:s:d:o:En:zxqgr", long_options, &long_index)) !=
 	      -1) {
 		switch(op) {
 		case 'h':
@@ -191,6 +192,7 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 			break;
 		case 'u':
 			engine_string = UDIG_ENGINE;
+			udig_path = optarg;
 			break;
 		case 's':
 			engine_string = SAVEFILE_ENGINE;
@@ -315,7 +317,7 @@ void open_engine(sinsp& inspector, libsinsp::events::set<ppm_sc_code> events_sc_
 #endif
 #ifdef HAS_ENGINE_UDIG
 	else if(!engine_string.compare(UDIG_ENGINE)) {
-		inspector.open_udig();
+		inspector.open_udig(udig_path);
 	}
 #endif
 	else {

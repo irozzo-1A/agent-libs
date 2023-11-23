@@ -150,9 +150,7 @@ void *accept_thread(void *arg) {
 	}
 }
 
-#define PPM_UNIX_PATH_MAX 108
-
-static int32_t scap_udig_listen(struct scap_udig *handle) {
+static int32_t scap_udig_listen(struct scap_udig *handle, const char *socket_path) {
 	int sock, ret;
 	struct sockaddr_un address;
 	unsigned long old_umask;
@@ -165,9 +163,9 @@ static int32_t scap_udig_listen(struct scap_udig *handle) {
 
 	memset(&address, 0, sizeof(address));
 	address.sun_family = AF_UNIX;
-	snprintf(address.sun_path, PPM_UNIX_PATH_MAX, UDIG_SOCKET);
+	snprintf(address.sun_path, PPM_UNIX_PATH_MAX, "%s", socket_path);
 
-	ret = unlink(UDIG_SOCKET);
+	ret = unlink(socket_path);
 	if(ret != 0 && ret != -ENOENT && ret != -EPERM) {
 		scap_errprintf(handle->m_lasterr, errno, "udig_fd_server: error unlinking unix socket");
 		return -1;
@@ -180,23 +178,23 @@ static int32_t scap_udig_listen(struct scap_udig *handle) {
 		umask(old_umask);
 		return -1;
 	}
+	umask(old_umask);
 
 	ret = listen(sock, 128);
 	if(ret != 0) {
 		scap_errprintf(handle->m_lasterr, errno, "udig_fd_server: error on listen");
 		return -1;
-		umask(old_umask);
 	}
 
-	umask(old_umask);
 	return sock;
 }
 
 int32_t scap_udig_open(scap_t *main_handle, struct scap_open_args *oargs) {
+	struct scap_udig2_engine_params *params = oargs->engine_params;
 	struct scap_udig *handle = main_handle->m_engine.m_handle;
 	pthread_attr_t attr;
 
-	handle->m_listen_fd = scap_udig_listen(handle);
+	handle->m_listen_fd = scap_udig_listen(handle, params->udig_socket_path);
 	if(handle->m_listen_fd < 0) {
 		return SCAP_FAILURE;
 	}
@@ -222,9 +220,5 @@ int32_t scap_udig_close(struct scap_engine_handle engine) {
 		scap_udig_close_dev(&handle->m_dev_set.m_devs[i], &handle->m_dev_set.old_stats);
 	}
 	handle->m_dev_set.m_used_devs = 0;
-	return SCAP_SUCCESS;
-}
-
-int32_t udig_begin_capture(struct scap_engine_handle engine, char *error) {
 	return SCAP_SUCCESS;
 }

@@ -5,6 +5,7 @@
 
 #include <pthread.h>
 #include <stdint.h>
+#include <limits.h>
 
 #include <libscap/scap_vtable.h>
 

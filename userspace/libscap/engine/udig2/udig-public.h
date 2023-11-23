@@ -16,3 +16,17 @@ limitations under the License.
 #include <stdint.h>
 
 #define UDIG_ENGINE "udig"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define PPM_UNIX_PATH_MAX 108
+
+struct scap_udig2_engine_params {
+	char udig_socket_path[PPM_UNIX_PATH_MAX];  ///<  path to the udig socket
+};
+
+#ifdef __cplusplus
+};
+#endif

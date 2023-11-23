@@ -631,9 +631,19 @@ void sinsp::open_test_input(scap_test_input_data* data, sinsp_mode_t mode) {
 #endif
 }
 
-void sinsp::open_udig() {
+void sinsp::open_udig(const std::string& socket_path) {
 #ifdef HAS_ENGINE_UDIG
 	scap_open_args oargs{};
+	struct scap_udig2_engine_params params;
+	if(socket_path.empty()) {
+		throw sinsp_exception(
+		        "When you use the 'UDIG' engine you need to provide a path to the socket.");
+	}
+	if(socket_path.size() >= sizeof(params.udig_socket_path)) {
+		throw sinsp_exception("The socket path is too long.");
+	}
+	strlcpy(params.udig_socket_path, socket_path.c_str(), sizeof(params.udig_socket_path));
+	oargs.engine_params = &params;
 
 	struct scap_platform* platform = scap_linux_alloc_platform(::on_new_entry_from_proc, this);
 	open_common(&oargs, &scap_udig_engine, platform, SINSP_MODE_LIVE);

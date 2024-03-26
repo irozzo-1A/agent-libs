@@ -231,7 +231,7 @@ void sinsp_plugin::destroy() {
 
 std::string sinsp_plugin::get_last_error() const {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		return s_not_init_err;
 	}
 
 	std::string ret;
@@ -592,14 +592,22 @@ std::string sinsp_plugin::get_init_schema(ss_plugin_schema_type& schema_type) co
 
 const libsinsp::events::set<ppm_event_code>& sinsp_plugin::extract_event_codes() const {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// note: in case the plugin is not initialized, we do nothing.
+		// m_extract_event_codes will end up being empty and all code checking
+		// its content will find no match. Note, this set is the first thing
+		// checked when extracting plugin fields within filterchecks, which
+		// means that non-initialized plugins will always return NULL checks.
 	}
 	return m_extract_event_codes;
 }
 
 const libsinsp::events::set<ppm_event_code>& sinsp_plugin::parse_event_codes() const {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// note: in case the plugin is not initialized, we do nothing.
+		// m_parse_event_codes will end up being empty and all code checking
+		// its content will find no match. Note, this set is the first thing
+		// checked when parsing events with the plugin parsers, which
+		// means that non-initialized plugins will always skip event parsing.
 	}
 	return m_parse_event_codes;
 }
@@ -663,7 +671,8 @@ void sinsp_plugin::validate_config_json_schema(std::string& config, std::string&
 
 bool sinsp_plugin::set_config(const std::string& config) {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// note: non-initialized plugins are never reconfigurable
+		return false;
 	}
 
 	std::string conf = config;
@@ -711,7 +720,7 @@ static void set_plugin_metric_value(metrics_v2& metric,
 
 std::vector<metrics_v2> sinsp_plugin::get_metrics() const {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		return std::vector<metrics_v2>();
 	}
 
 	std::vector<metrics_v2> metrics;
@@ -782,7 +791,7 @@ ss_plugin_rc plugin_unsubscribe_routine(ss_plugin_owner_t* o, ss_plugin_routine_
 
 bool sinsp_plugin::capture_open() {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		return true;
 	}
 
 	if(!m_handle->api.capture_open) {
@@ -812,7 +821,7 @@ bool sinsp_plugin::capture_open() {
 
 bool sinsp_plugin::capture_close() {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		return true;
 	}
 
 	if(!m_handle->api.capture_close) {
@@ -864,7 +873,8 @@ scap_source_plugin& sinsp_plugin::as_scap_source() {
 
 std::string sinsp_plugin::get_progress(uint32_t& progress_pct) const {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// note: non-initialized plugins should have no event source progress
+		return "";
 	}
 
 	std::string ret;
@@ -885,7 +895,9 @@ std::string sinsp_plugin::get_progress(uint32_t& progress_pct) const {
 
 std::string sinsp_plugin::event_to_string(sinsp_evt* evt) const {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// we're not supposed to get here in case of non-initialized plugin,
+		// but in case we get here then we return an empty string
+		return "";
 	}
 
 	if(evt->get_type() != PPME_PLUGINEVENT_E || evt->get_param(0)->as<uint32_t>() != m_id) {
@@ -922,7 +934,7 @@ std::string sinsp_plugin::event_to_string(sinsp_evt* evt) const {
 
 std::vector<sinsp_plugin::open_param> sinsp_plugin::list_open_params() const {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		return std::vector<sinsp_plugin::open_param>();
 	}
 
 	std::vector<sinsp_plugin::open_param> list;
@@ -970,7 +982,8 @@ bool sinsp_plugin::extract_fields(sinsp_evt* evt,
                                   uint32_t num_fields,
                                   ss_plugin_extract_field* fields) {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// note: in case the plugin is not initialized, we want to silently fail the extraction
+		return false;
 	}
 
 	ss_plugin_event_input ev;
@@ -1001,7 +1014,8 @@ bool sinsp_plugin::extract_fields(sinsp_evt* evt,
 
 bool sinsp_plugin::parse_event(sinsp_evt* evt) {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// note: in case the plugin is not initialized, we want to silently skip the parsing
+		return true;
 	}
 
 	ss_plugin_event_input ev;
@@ -1102,7 +1116,9 @@ ss_plugin_rc sinsp_plugin::handle_plugin_async_event(ss_plugin_owner_t* o,
 
 bool sinsp_plugin::set_async_event_handler(async_event_handler_t handler) {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// note: in case the plugin is not initialized, we want to silently
+		// skip the async events generation
+		return true;
 	}
 
 	// note: setting the handler before invoking the plugin's function,

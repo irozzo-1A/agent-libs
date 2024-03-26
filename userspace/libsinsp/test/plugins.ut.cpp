@@ -381,7 +381,6 @@ TEST(sinsp_plugin, plugin_extract_compatibility) {
 	// compatible event sources specified, event types specified (config-altered)
 	api.get_name = []() { return "p1-2"; };
 	p = i.register_plugin(&api);
-	ASSERT_ANY_THROW(p->extract_event_codes());  // can't be called before init
 	p->init("322,402", tmp);
 	ASSERT_EQ(p->extract_event_sources().size(), 1);
 	ASSERT_TRUE(sinsp_plugin::is_source_compatible(p->extract_event_sources(), "sample"));

@@ -32,6 +32,11 @@ enum ring_state {
 	RING_STOPPED = 2,
 };
 
+struct udig_syscall_bitmap {
+	size_t m_size;
+	uint8_t m_bitmap[0];
+} __attribute__((aligned(256)));
+
 struct udig_ring_buffer_status {
 	volatile uint64_t m_writer_tid;
 	volatile uint32_t m_buffer_size;
@@ -53,12 +58,27 @@ struct udig_ring_buffer_status {
 	// the refcount would go down and check the ringbuffer
 	// lock then.
 	volatile uint32_t m_new_exits;
+
+	volatile struct udig_syscall_bitmap m_syscall_bitmap;
 };
 
 struct scap_ringbuffer_info {
 	struct ppm_ring_buffer_info m_bufinfo;
 	struct udig_ring_buffer_status m_ring_buffer_status;
 };
+
+// The syscall bitmap has variable size, so it should be the last member of scap_ringbuffer_info
+// so let's align it to 256 bytes, leaving plenty of room for expansion of the previous fields.
+// At the time of this writing, all the previous fields sum up to 340 bytes.
+//
+// If we do exceed another 256 bytes, we can just change the assert below, but that breaks binary
+// compatibility and needs to be coordinated with libscap-hayabusa.
+//
+// The size of the bitmap is negotiated between the producer and consumer (set by the consumer,
+// really) and the upper limit is PAGE_SIZE - the offset. That works out to 3584 bytes (28672
+// bits), which should be plenty.
+_Static_assert(offsetof(struct scap_ringbuffer_info, m_ring_buffer_status.m_syscall_bitmap) == 512,
+               "syscall bitmap must be at offset 512");
 
 int32_t udig_map_ring(struct scap_device *dev,
                       uint32_t ring_size,

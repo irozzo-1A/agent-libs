@@ -30,6 +30,9 @@ struct scap_udig {
 	pthread_t m_thread;
 	struct udig_consumer_t settings;
 	volatile bool m_udig_capturing;
+
+	size_t m_bitmap_size;
+	uint8_t m_bitmap[SYSCALL_TABLE_SIZE];
 };
 
 void *scap_udig_alloc(scap_t *main_handle, char *lasterr_ptr);

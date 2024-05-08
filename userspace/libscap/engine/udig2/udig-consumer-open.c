@@ -58,6 +58,11 @@ static int32_t scap_udig_open_dev(struct scap_udig *handle, struct scap_device *
 	dev->m_sn_len = 0;
 	dev->m_sn_next_event = dev->m_buffer;
 
+	dev->m_bufstatus->m_syscall_bitmap.m_size = handle->m_bitmap_size;
+	memcpy((char *)dev->m_bufstatus->m_syscall_bitmap.m_bitmap,
+	       handle->m_bitmap,
+	       handle->m_bitmap_size);
+
 	dev->m_state = DEV_OPEN;
 	__sync_synchronize();
 	if(handle->m_udig_capturing) {
@@ -189,6 +194,22 @@ static int32_t scap_udig_listen(struct scap_udig *handle, const char *socket_pat
 	return sock;
 }
 
+static inline void set_syscall_bitmap_entry(struct scap_udig *handle, int sc_code) {
+	int sc = scap_ppm_sc_to_native_id(sc_code);
+
+	if(sc == -1) {
+		return;
+	}
+
+	size_t byte = sc / 8;
+	size_t bit = sc % 8;
+
+	handle->m_bitmap[byte] |= (1 << bit);
+	if(handle->m_bitmap_size < byte) {
+		handle->m_bitmap_size = byte;
+	}
+}
+
 int32_t scap_udig_open(scap_t *main_handle, struct scap_open_args *oargs) {
 	struct scap_udig2_engine_params *params = oargs->engine_params;
 	struct scap_udig *handle = main_handle->m_engine.m_handle;
@@ -204,6 +225,12 @@ int32_t scap_udig_open(scap_t *main_handle, struct scap_open_args *oargs) {
 		return SCAP_FAILURE;
 	}
 	handle->m_dev_set.m_ndevs = 0;
+
+	for(int i = 0; i < sizeof(oargs->ppm_sc_of_interest.ppm_sc); i++) {
+		if(oargs->ppm_sc_of_interest.ppm_sc[i]) {
+			set_syscall_bitmap_entry(handle, i);
+		}
+	}
 
 	// TODO handle errors here
 	pthread_attr_init(&attr);

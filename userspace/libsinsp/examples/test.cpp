@@ -317,7 +317,7 @@ void open_engine(sinsp& inspector, libsinsp::events::set<ppm_sc_code> events_sc_
 #endif
 #ifdef HAS_ENGINE_UDIG
 	else if(!engine_string.compare(UDIG_ENGINE)) {
-		inspector.open_udig(udig_path);
+		inspector.open_udig(udig_path, ppm_sc);
 	}
 #endif
 	else {

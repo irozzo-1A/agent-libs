@@ -631,9 +631,14 @@ void sinsp::open_test_input(scap_test_input_data* data, sinsp_mode_t mode) {
 #endif
 }
 
-void sinsp::open_udig(const std::string& socket_path) {
+void sinsp::open_udig(const std::string& socket_path,
+                      const libsinsp::events::set<ppm_sc_code>& ppm_sc_of_interest) {
 #ifdef HAS_ENGINE_UDIG
 	scap_open_args oargs{};
+
+	/* Set interesting syscalls and tracepoints. */
+	fill_ppm_sc_of_interest(&oargs, ppm_sc_of_interest);
+
 	struct scap_udig2_engine_params params;
 	if(socket_path.empty()) {
 		throw sinsp_exception(

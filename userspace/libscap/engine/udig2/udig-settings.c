@@ -204,6 +204,60 @@ static int32_t scap_udig_set_statsd_port(struct scap_udig *handle, const uint16_
 	return SCAP_SUCCESS;
 }
 
+static int32_t scap_udig_set_syscall_mask(struct scap_udig *handle, uint32_t op, uint32_t sc) {
+	uint32_t native_sc = scap_ppm_sc_to_native_id(sc);
+	if(native_sc == (uint32_t)-1) {
+		// not a syscall
+		return SCAP_SUCCESS;
+	}
+
+	size_t byte = native_sc / 8;
+	size_t bit = native_sc % 8;
+
+	if(byte >= sizeof(handle->m_bitmap)) {
+		return scap_errprintf(handle->m_lasterr,
+		                      0,
+		                      "syscall number %d (sc %d) too large",
+		                      native_sc,
+		                      sc);
+	}
+
+	if(op == SCAP_PPM_SC_MASK_SET) {
+		handle->m_bitmap[byte] |= (1 << bit);
+		if(handle->m_bitmap_size < byte) {
+			handle->m_bitmap_size = byte;
+		}
+	} else if(op == SCAP_PPM_SC_MASK_UNSET) {
+		handle->m_bitmap[byte] &= ~(1 << bit);
+	} else {
+		return scap_errprintf(handle->m_lasterr, 0, "invalid syscall mask operation %d", op);
+	}
+
+	for(int i = 0; i < handle->m_dev_set.m_ndevs; ++i) {
+		struct scap_device *dev = &handle->m_dev_set.m_devs[i];
+		if(dev->m_state != DEV_OPEN) {
+			continue;
+		}
+
+		// We do not need the ops to be atomic (since we should be the only writer)
+		// but we do the memory writes to happen.
+		//
+		// Also, while there is an atomic or, there's no atomic and :( (nand doesn't quite fit)
+		volatile struct udig_syscall_bitmap *bitmap = &dev->m_bufstatus->m_syscall_bitmap;
+		if(bitmap->m_size < byte) {
+			bitmap->m_size = byte;
+		}
+
+		if(op == SCAP_PPM_SC_MASK_SET) {
+			bitmap->m_bitmap[byte] |= (1 << bit);
+		} else {
+			bitmap->m_bitmap[byte] &= ~(1 << bit);
+		}
+	}
+
+	return SCAP_SUCCESS;
+}
+
 int32_t scap_udig_configure(struct scap_engine_handle engine,
                             enum scap_setting setting,
                             unsigned long arg1,
@@ -220,6 +274,8 @@ int32_t scap_udig_configure(struct scap_engine_handle engine,
 		return scap_udig_set_fullcapture_port_range(handle, arg1, arg2);
 	case SCAP_STATSD_PORT:
 		return scap_udig_set_statsd_port(handle, arg1);
+	case SCAP_PPM_SC_MASK:
+		return scap_udig_set_syscall_mask(handle, arg1, arg2);
 
 	default:
 		return scap_errprintf(handle->m_lasterr, 0, "not supported on udig");

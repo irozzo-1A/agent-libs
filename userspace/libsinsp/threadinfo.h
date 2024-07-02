@@ -37,6 +37,8 @@ struct iovec {
 #include <libsinsp/state/table.h>
 #include <libsinsp/state/table_adapters.h>
 
+class blprogram;
+
 struct erase_fd_params {
 	bool m_remove_from_table;
 	int64_t m_fd;
@@ -620,6 +622,12 @@ public:
 
 	inline sinsp_evt::category& get_lastevent_category() { return m_lastevent_category; }
 
+	inline blprogram* get_blprogram() { return m_blprogram; }
+
+	inline const blprogram* get_blprogram() const { return m_blprogram; }
+
+	inline void set_blprogram(blprogram* v) { m_blprogram = v; }
+
 private:
 	sinsp_threadinfo* get_cwd_root();
 	bool set_env_from_proc();
@@ -649,9 +657,9 @@ private:
 	bool m_parent_loop_detected;
 	libsinsp::state::stl_container_table_adapter<decltype(m_args)> m_args_table_adapter;
 	libsinsp::state::stl_container_table_adapter<decltype(m_env)> m_env_table_adapter;
-	blprogram* m_blprogram;
 
 	std::string m_cmd_line;
+	blprogram* m_blprogram;
 };
 
 /*@}*/

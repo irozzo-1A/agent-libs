@@ -257,7 +257,7 @@ TEST(sinsp_filter_compiler, supported_operators) {
 	test_filter_compile(factory, "c.buffer bstartswith abc_1", true);
 }
 
-TEST(sinsp_filter_compiler, operators_field_types_compatibility) {
+TEST(sinsp_filter_compiler, DISABLED_operators_field_types_compatibility) {
 	sinsp inspector;
 	sinsp_filter_check_list filterlist;
 	auto factory = std::make_shared<sinsp_filter_factory>(&inspector, filterlist);

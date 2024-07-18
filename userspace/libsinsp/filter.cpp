@@ -267,11 +267,8 @@ void sinsp_filter_compiler::visit(const libsinsp::filter::ast::not_expr* e) {
 }
 
 static inline void check_op_type_compatibility(sinsp_filter_check& c) {
-	std::string err;
-	auto fi = c.get_transformed_field_info();
-	if(fi && !flt_is_comparable(c.m_cmpop, fi->m_type, fi->is_list(), err)) {
-		throw sinsp_exception("filter error: " + err);
-	}
+	// note(jasondellaluce): we temporarily ignore compatibility issues for
+	// Sysdig products only. for context, see: https://sysdig.atlassian.net/browse/SMAGENT-7641
 }
 
 void sinsp_filter_compiler::visit(const libsinsp::filter::ast::unary_check_expr* e) {

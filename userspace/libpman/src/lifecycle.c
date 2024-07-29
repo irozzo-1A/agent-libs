@@ -77,6 +77,14 @@ void pman_close_probe() {
 		g_state.prod_pos = NULL;
 	}
 
+	if(g_state.buf_array) {
+		free(g_state.buf_array);
+	}
+
+	if(g_state.b_state) {
+		free(g_state.b_state);
+	}
+
 	if(g_state.skel) {
 		bpf_probe__detach(g_state.skel);
 		bpf_probe__destroy(g_state.skel);

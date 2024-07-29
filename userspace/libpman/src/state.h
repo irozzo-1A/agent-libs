@@ -27,6 +27,10 @@ limitations under the License.
 #include <unistd.h>
 #include <errno.h>
 
+// Fork-only includes
+#include <libscap/ringbuffer/sysdig/common/ringbuffer_mode.h>
+#include <libscap/ringbuffer/sysdig/common/optimized_structs.h>
+
 #define MAX_ERROR_MESSAGE_LEN 200
 
 /* Pay attention this need to be bumped every time we add a new bpf program that is directly
@@ -67,6 +71,17 @@ struct internal_state {
 	char* log_buf;            /* buffer used to store logs before sending them to the log_fn */
 	size_t log_buf_size;      /* size of the log buffer */
 	falcosecurity_log_fn log_fn;
+
+	/* Needed for optimized ring buffer implementation */
+	enum ringbuffer_mode_t ringbuf_mode;
+	active_list
+	        al;  // (al = active list) contains buffer IDs we are considering during the extraction.
+	uint16_t wl_head;     // (wl = wait list) contains buffer IDs we are not considering during the
+	                      // extraction.
+	uint16_t* buf_array;  // This is the array that contains the 2 lists (active and wait lists).
+	buffer_state* b_state;  // This is the actual state of the buffers.
+	event_cache
+	        e_cache;  // This is the cache used to store the events we want to send to userspace.
 };
 
 extern struct internal_state g_state;

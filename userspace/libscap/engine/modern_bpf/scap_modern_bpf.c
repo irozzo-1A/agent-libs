@@ -252,7 +252,8 @@ int32_t scap_modern_bpf__init(scap_t* handle, scap_open_args* oargs) {
 	if(pman_init_state(oargs->log_fn,
 	                   params->buffer_bytes_dim,
 	                   params->cpus_for_each_buffer,
-	                   params->allocate_online_only)) {
+	                   params->allocate_online_only,
+	                   oargs->ringbuffer_mode)) {
 		snprintf(handle->m_lasterr, SCAP_LASTERR_SIZE, "unable to configure the libpman state.");
 		return SCAP_FAILURE;
 	}

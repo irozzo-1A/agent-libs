@@ -6,6 +6,7 @@
 #include <libscap_test_var.h>
 #include <syscall.h>
 #include <fcntl.h>
+#include <libscap/ringbuffer/sysdig/common/ringbuffer_mode.h>
 
 int remove_kmod(char* error_buf) {
 	if(syscall(__NR_delete_module, LIBSCAP_TEST_KERNEL_MODULE_NAME, O_NONBLOCK)) {
@@ -77,7 +78,8 @@ scap_t* open_kmod_engine(char* error_buf,
                          int32_t* rc,
                          unsigned long buffer_dim,
                          const char* kmod_path,
-                         std::unordered_set<uint32_t> ppm_sc_set = {}) {
+                         std::unordered_set<uint32_t> ppm_sc_set = {},
+                         enum ringbuffer_mode_t ring_mode = DEFAULT_RINGBUF_MODE) {
 	struct scap_open_args oargs {};
 
 	/* Remove previously inserted kernel module */
@@ -94,6 +96,10 @@ scap_t* open_kmod_engine(char* error_buf,
 	if(ppm_sc_set.empty()) {
 		for(int i = 0; i < PPM_SC_MAX; i++) {
 			oargs.ppm_sc_of_interest.ppm_sc[i] = 1;
+			// We exclude page faults because they can cause out-of-order events on the same buffer.
+			if(i == PPM_SC_PAGE_FAULT_USER || i == PPM_SC_PAGE_FAULT_KERNEL) {
+				oargs.ppm_sc_of_interest.ppm_sc[i] = 0;
+			}
 		}
 	} else {
 		for(auto ppm_sc : ppm_sc_set) {
@@ -105,6 +111,7 @@ scap_t* open_kmod_engine(char* error_buf,
 	        .buffer_bytes_dim = buffer_dim,
 	};
 	oargs.engine_params = &kmod_params;
+	oargs.ringbuffer_mode = ring_mode;
 
 	return scap_open(&oargs, &scap_kmod_engine, error_buf, rc);
 }
@@ -137,19 +144,6 @@ TEST(kmod, events_not_overwritten) {
 	        << "unable to open kmod engine: " << error_buffer << std::endl;
 
 	check_event_is_not_overwritten(h);
-	scap_close(h);
-}
-
-TEST(kmod, read_in_order) {
-	char error_buffer[SCAP_LASTERR_SIZE] = {0};
-	int ret = 0;
-	/* We use buffers of 1 MB to be sure that we don't have drops */
-	scap_t* h =
-	        open_kmod_engine(error_buffer, &ret, 1 * 1024 * 1024, LIBSCAP_TEST_KERNEL_MODULE_PATH);
-	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
-	        << "unable to open kmod engine: " << error_buffer << std::endl;
-
-	check_event_order(h);
 	scap_close(h);
 }
 
@@ -331,5 +325,82 @@ TEST(kmod, metrics_v2_check_empty) {
 	ASSERT_TRUE(scap_get_stats_v2(h, flags, &nstats, &rc));
 	ASSERT_EQ(nstats, 0);
 	ASSERT_EQ(rc, SCAP_SUCCESS);
+	scap_close(h);
+}
+
+// Fork only
+#include <helpers/sysdig/check_buffers.h>
+
+// Here we see all the events in order because we call `scap_next` only once we send all the
+// syscalls under test. So when we refill the buffers we will see all the data we want in our
+// blocks.
+TEST(kmod, read_pre_fetched_default) {
+	char error_buffer[SCAP_LASTERR_SIZE] = {0};
+	int ret = 0;
+	scap_t* h =
+	        open_kmod_engine(error_buffer, &ret, 8 * 1024 * 1024, LIBSCAP_TEST_KERNEL_MODULE_PATH);
+	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
+	        << "unable to open kmod engine: " << error_buffer << std::endl;
+
+	check_pre_fetched_event_order(h);
+	scap_close(h);
+}
+
+TEST(kmod, read_live_same_thread_default) {
+	char error_buffer[SCAP_LASTERR_SIZE] = {0};
+	int ret = 0;
+	scap_t* h =
+	        open_kmod_engine(error_buffer, &ret, 8 * 1024 * 1024, LIBSCAP_TEST_KERNEL_MODULE_PATH);
+	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
+	        << "unable to open kmod engine: " << error_buffer << std::endl;
+
+	check_live_same_thread_event_order(h);
+	scap_close(h);
+}
+
+TEST(kmod, read_pre_fetched_sll) {
+	char error_buffer[SCAP_LASTERR_SIZE] = {0};
+	int ret = 0;
+	scap_t* h = open_kmod_engine(error_buffer,
+	                             &ret,
+	                             8 * 1024 * 1024,
+	                             LIBSCAP_TEST_KERNEL_MODULE_PATH,
+	                             {},
+	                             SORTED_LINKED_LIST_RINGBUF_MODE);
+	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
+	        << "unable to open kmod engine: " << error_buffer << std::endl;
+
+	check_pre_fetched_event_order(h);
+	scap_close(h);
+}
+
+TEST(kmod, read_live_same_thread_sll) {
+	char error_buffer[SCAP_LASTERR_SIZE] = {0};
+	int ret = 0;
+	scap_t* h = open_kmod_engine(error_buffer,
+	                             &ret,
+	                             8 * 1024 * 1024,
+	                             LIBSCAP_TEST_KERNEL_MODULE_PATH,
+	                             {},
+	                             SORTED_LINKED_LIST_RINGBUF_MODE);
+	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
+	        << "unable to open kmod engine: " << error_buffer << std::endl;
+	check_live_same_thread_event_order(h);
+	scap_close(h);
+}
+
+TEST(kmod, check_refill_mode) {
+	char error_buffer[SCAP_LASTERR_SIZE] = {0};
+	int ret = 0;
+	scap_t* h = open_kmod_engine(error_buffer,
+	                             &ret,
+	                             8 * 1024 * 1024,
+	                             LIBSCAP_TEST_KERNEL_MODULE_PATH,
+	                             {PPM_SC_OPEN_BY_HANDLE_AT},
+	                             SORTED_LINKED_LIST_RINGBUF_MODE);
+	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
+	        << "unable to open kmod engine: " << error_buffer << std::endl;
+
+	check_refill(h);
 	scap_close(h);
 }

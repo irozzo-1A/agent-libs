@@ -2054,6 +2054,8 @@ static int32_t init(scap_t *handle, scap_open_args *oargs) {
 		HANDLE(engine)->m_flags |= ENGINE_FLAG_BPF_STATS_ENABLED;
 	}
 
+	HANDLE(engine)->m_dev_set.m_ringbuffer_mode = oargs->ringbuffer_mode;
+
 	return SCAP_SUCCESS;
 }
 

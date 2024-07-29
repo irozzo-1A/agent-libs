@@ -34,6 +34,13 @@ int32_t devset_init(struct scap_device_set *devset, size_t num_devs, char *laste
 		return SCAP_FAILURE;
 	}
 
+	// The ringbuffer mode will be overwritten if necessary.
+	devset->m_ringbuffer_mode = DEFAULT_RINGBUF_MODE;
+	devset->wl_head = INVALID_BUFFER_ID;
+	devset->al = (active_list){.h = INVALID_BUFFER_ID, .t = INVALID_BUFFER_ID};
+	devset->buf_array = (uint16_t *)calloc(devset->m_ndevs, sizeof(uint16_t));
+	devset->e_cache = (event_cache){};
+
 	for(size_t j = 0; j < num_devs; ++j) {
 		devset->m_devs[j].m_buffer = INVALID_MAPPING;
 		devset->m_devs[j].m_bufinfo = INVALID_MAPPING;
@@ -42,6 +49,9 @@ int32_t devset_init(struct scap_device_set *devset, size_t num_devs, char *laste
 		devset->m_devs[j].m_bufinfo_fd = INVALID_FD;
 		devset->m_devs[j].m_lastreadsize = 0;
 		devset->m_devs[j].m_sn_len = 0;
+
+		devset->m_devs[j].m_evt_p = NULL;
+		devset->m_devs[j].m_alive_events = 0;
 	}
 	devset->m_buffer_empty_wait_time_us = BUFFER_EMPTY_WAIT_TIME_US_START;
 	devset->m_lasterr = lasterr;
@@ -113,4 +123,5 @@ void devset_free(struct scap_device_set *devset) {
 		devset_close_device(dev);
 	}
 	free(devset->m_devs);
+	free(devset->buf_array);
 }

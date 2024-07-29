@@ -29,6 +29,10 @@ limitations under the License.
 #include <libscap/scap_assert.h>
 #include <libscap/scap.h>  // for scap_stats
 
+/* Needed for optimized ring buffer implementation */
+#include <libscap/ringbuffer/sysdig/common/ringbuffer_mode.h>
+#include <libscap/ringbuffer/sysdig/common/optimized_structs.h>
+
 //
 // Read buffer timeout constants
 //
@@ -67,6 +71,13 @@ typedef struct scap_device {
 			enum scap_device_state m_state;
 		};
 	};
+
+	// Needed for optimized ring buffer implementation
+	struct ppm_evt_hdr *m_evt_p;  // Pointer to the last event read in the device.
+	uint32_t m_alive_events;      // Number of events we need to process before freeing the block of
+	                          // memory. We use uint32_t because it should be faster, but an uint8_t
+	                          // should be enough because at max the alive events for a buffer can
+	                          // be EVENT_CACHE_LIMIT(at the moment '16') + 1.
 } scap_device;
 
 struct scap_device_set {
@@ -77,6 +88,16 @@ struct scap_device_set {
 	uint64_t m_buffer_empty_wait_time_us;
 	char *m_lasterr;
 	struct scap_stats old_stats;
+
+	// Needed for optimized ring buffer implementation
+	enum ringbuffer_mode_t m_ringbuffer_mode;
+	active_list
+	        al;  // (al = active list) contains buffer IDs we are considering during the extraction.
+	uint16_t wl_head;     // (wl = wait list) contains buffer IDs we are not considering during the
+	                      // extraction.
+	uint16_t *buf_array;  // This is the array that contains the 2 lists (active and wait lists).
+	struct event_cache
+	        e_cache;  // This is the cache used to store the events we want to send to userspace.
 };
 
 int32_t devset_init(struct scap_device_set *devset, size_t num_devs, char *lasterr);

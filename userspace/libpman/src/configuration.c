@@ -90,12 +90,21 @@ void pman_clear_state() {
 	}
 	g_state.log_buf = NULL;
 	g_state.log_buf_size = 0;
+
+	/* Needed for optimized ring buffer implementation */
+	g_state.ringbuf_mode = DEFAULT_RINGBUF_MODE;
+	g_state.wl_head = INVALID_BUFFER_ID;
+	g_state.al = (active_list){.h = INVALID_BUFFER_ID, .t = INVALID_BUFFER_ID};
+	g_state.buf_array = NULL;
+	g_state.b_state = NULL;
+	g_state.e_cache = (event_cache){};
 }
 
 int pman_init_state(falcosecurity_log_fn log_fn,
                     unsigned long buf_bytes_dim,
                     uint16_t cpus_for_each_buffer,
-                    bool allocate_online_only) {
+                    bool allocate_online_only,
+                    enum ringbuffer_mode_t ring_mode) {
 	char error_message[MAX_ERROR_MESSAGE_LEN];
 
 	/* `LIBBPF_STRICT_ALL` turns on all supported strict features
@@ -185,6 +194,8 @@ int pman_init_state(falcosecurity_log_fn log_fn,
 	/* These will be used during the ring buffer consumption phase. */
 	g_state.last_ring_read = -1;
 	g_state.last_event_size = 0;
+
+	g_state.ringbuf_mode = ring_mode;
 	return 0;
 }
 

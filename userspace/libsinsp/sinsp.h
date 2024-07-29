@@ -43,6 +43,7 @@ limitations under the License.
 #pragma once
 
 #include <libscap/scap.h>
+#include <libscap/ringbuffer/sysdig/common/ringbuffer_mode.h>
 
 #include <libsinsp/capture_stats_source.h>
 #include <libsinsp/container.h>
@@ -982,6 +983,10 @@ public:
 
 	inline std::vector<int64_t>& get_fds_to_remove() { return m_fds_to_remove; }
 
+	void set_ringbuffer_mode(ringbuffer_mode_t mode) { m_ringbuffer_mode = mode; }
+
+	ringbuffer_mode_t get_ringbuffer_mode() const { return m_ringbuffer_mode; }
+
 private:
 	void set_input_plugin(const std::string& name, const std::string& params);
 	void open_common(scap_open_args* oargs,
@@ -1261,6 +1266,7 @@ public:
 
 	bool m_inited;
 	static std::atomic<int> instance_count;
+	ringbuffer_mode_t m_ringbuffer_mode{DEFAULT_RINGBUF_MODE};
 };
 
 /*@}*/

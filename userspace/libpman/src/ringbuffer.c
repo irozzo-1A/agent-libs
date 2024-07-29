@@ -27,6 +27,9 @@ limitations under the License.
 
 #include "ringbuffer_definitions.h"
 
+// Fork only
+#include <sysdig/optimized_ringbuffer.h>
+
 /* Utility functions object loading */
 
 /* This must be done to please the verifier! At load-time, the verifier must know the
@@ -73,6 +76,15 @@ static int allocate_consumer_producer_positions() {
 	if(g_state.cons_pos == NULL || g_state.prod_pos == NULL) {
 		pman_print_error("failed to alloc memory for cons_pos and prod_pos");
 		return errno;
+	}
+
+	// If we are using the optimized ring buffer implementation we need to allocate also these
+	// variables.
+	if(g_state.ringbuf_mode == SORTED_LINKED_LIST_RINGBUF_MODE) {
+		if(ring_buffer__populate_state()) {
+			pman_print_error("failed to populate the state for the optimized ringbuf");
+			return errno;
+		}
 	}
 	return 0;
 }
@@ -318,5 +330,22 @@ static void ringbuf__consume_first_event(struct ring_buffer *rb,
 
 /* Consume */
 void pman_consume_first_event(void **event_ptr, int16_t *buffer_id) {
-	ringbuf__consume_first_event(g_state.rb_manager, (struct ppm_evt_hdr **)event_ptr, buffer_id);
+	switch(g_state.ringbuf_mode) {
+	case DEFAULT_RINGBUF_MODE:
+		ringbuf__consume_first_event(g_state.rb_manager,
+		                             (struct ppm_evt_hdr **)event_ptr,
+		                             buffer_id);
+		return;
+
+	case SORTED_LINKED_LIST_RINGBUF_MODE:
+		ring_buffer__sorted_linked_list(g_state.rb_manager,
+		                                (struct ppm_evt_hdr **)event_ptr,
+		                                buffer_id);
+		return;
+
+	default:
+		pman_print_error("Invalid ringbuf mode");
+		assert(false);
+		break;
+	}
 }

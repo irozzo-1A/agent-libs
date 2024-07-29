@@ -26,13 +26,18 @@ scap_t* open_modern_bpf_engine(char* error_buf,
                                unsigned long buffer_dim,
                                uint16_t cpus_for_each_buffer,
                                bool online_only,
-                               std::unordered_set<uint32_t> ppm_sc_set = {}) {
+                               std::unordered_set<uint32_t> ppm_sc_set = {},
+                               enum ringbuffer_mode_t ring_mode = DEFAULT_RINGBUF_MODE) {
 	struct scap_open_args oargs {};
 
 	/* If empty we fill with all syscalls */
 	if(ppm_sc_set.empty()) {
 		for(int i = 0; i < PPM_SC_MAX; i++) {
 			oargs.ppm_sc_of_interest.ppm_sc[i] = 1;
+			// We exclude page faults because they can cause out-of-order events on the same buffer.
+			if(i == PPM_SC_PAGE_FAULT_USER || i == PPM_SC_PAGE_FAULT_KERNEL) {
+				oargs.ppm_sc_of_interest.ppm_sc[i] = 0;
+			}
 		}
 	} else {
 		for(auto ppm_sc : ppm_sc_set) {
@@ -47,6 +52,7 @@ scap_t* open_modern_bpf_engine(char* error_buf,
 	};
 	oargs.engine_params = &modern_bpf_params;
 	oargs.log_fn = test_open_log_fn;
+	oargs.ringbuffer_mode = ring_mode;
 
 	return scap_open(&oargs, &scap_modern_bpf_engine, error_buf, rc);
 }
@@ -177,45 +183,6 @@ TEST(modern_bpf, one_buffer_shared_between_all_online_CPUs_with_explicit_CPUs_nu
 	ASSERT_EQ(num_rings, 1) << "we should have only one ring buffer shared between all CPUs!"
 	                        << std::endl;
 
-	scap_close(h);
-}
-
-TEST(modern_bpf, read_in_order_one_buffer_per_online_CPU) {
-	char error_buffer[FILENAME_MAX] = {0};
-	int ret = 0;
-	/* We use buffers of 1 MB to be sure that we don't have drops */
-	scap_t* h = open_modern_bpf_engine(error_buffer, &ret, 1 * 1024 * 1024, 1, true);
-	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
-	        << "unable to open modern bpf engine with one ring buffer per CPU: " << error_buffer
-	        << std::endl;
-
-	check_event_order(h);
-	scap_close(h);
-}
-
-TEST(modern_bpf, read_in_order_one_buffer_every_two_online_CPUs) {
-	char error_buffer[FILENAME_MAX] = {0};
-	int ret = 0;
-	/* We use buffers of 1 MB to be sure that we don't have drops */
-	scap_t* h = open_modern_bpf_engine(error_buffer, &ret, 1 * 1024 * 1024, 2, true);
-	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
-	        << "unable to open modern bpf engine with one ring buffer every 2 CPUs: "
-	        << error_buffer << std::endl;
-
-	check_event_order(h);
-	scap_close(h);
-}
-
-TEST(modern_bpf, read_in_order_one_buffer_shared_between_all_possible_CPUs) {
-	char error_buffer[FILENAME_MAX] = {0};
-	int ret = 0;
-	/* We use buffers of 1 MB to be sure that we don't have drops */
-	scap_t* h = open_modern_bpf_engine(error_buffer, &ret, 1 * 1024 * 1024, 0, false);
-	ASSERT_EQ(!h || ret != SCAP_SUCCESS, false)
-	        << "unable to open modern bpf engine with one single shared ring buffer: "
-	        << error_buffer << std::endl;
-
-	check_event_order(h);
 	scap_close(h);
 }
 
@@ -415,5 +382,114 @@ TEST(modern_bpf, double_metrics_v2_call) {
 	ASSERT_EQ(rc, SCAP_SUCCESS);
 	ASSERT_GT(nstats, 0);
 
+	scap_close(h);
+}
+
+// Fork only
+#include <helpers/sysdig/check_buffers.h>
+
+enum test_buf_mode_t {
+	// Pre-fetched because the events are already in the buffer when we call the first scap_next
+	PRE_FETCHED_MODE = 0,
+	// Live because we call scap_next while another thread is producing events. Same thread because
+	// we check only the order of the events on the same thread.
+	LIVE_SAME_THREAD_MODE = 1,
+};
+
+#define READ_EVENTS(ring_mode, test_mode, cpu_num)      \
+	char error_buffer[FILENAME_MAX] = {0};              \
+	int ret = 0;                                        \
+	scap_t* h = open_modern_bpf_engine(error_buffer,    \
+	                                   &ret,            \
+	                                   8 * 1024 * 1024, \
+	                                   cpu_num,         \
+	                                   true,            \
+	                                   {},              \
+	                                   ring_mode);      \
+	switch(test_mode) {                                 \
+	case PRE_FETCHED_MODE:                              \
+		check_pre_fetched_event_order(h);               \
+		break;                                          \
+                                                        \
+	case LIVE_SAME_THREAD_MODE:                         \
+		check_live_same_thread_event_order(h);          \
+		break;                                          \
+	default:                                            \
+		break;                                          \
+	}                                                   \
+	scap_close(h);
+
+///////////////////////////
+// Default ring buffer mode
+///////////////////////////
+
+TEST(modern_bpf, read_1_buffer_1_CPU_pre_fetched_default) {
+	READ_EVENTS(DEFAULT_RINGBUF_MODE, PRE_FETCHED_MODE, 1);
+}
+
+TEST(modern_bpf, read_1_buffer_2_CPU_pre_fetched_default) {
+	READ_EVENTS(DEFAULT_RINGBUF_MODE, PRE_FETCHED_MODE, 2);
+}
+
+TEST(modern_bpf, read_1_buffer_all_CPU_pre_fetched_default) {
+	READ_EVENTS(DEFAULT_RINGBUF_MODE, PRE_FETCHED_MODE, 0);
+}
+
+TEST(modern_bpf, read_1_buffer_1_CPU_live_same_thread_default) {
+	READ_EVENTS(DEFAULT_RINGBUF_MODE, LIVE_SAME_THREAD_MODE, 1);
+}
+
+TEST(modern_bpf, read_1_buffer_2_CPU_live_same_thread_default) {
+	READ_EVENTS(DEFAULT_RINGBUF_MODE, LIVE_SAME_THREAD_MODE, 2);
+}
+
+TEST(modern_bpf, read_1_buffer_all_CPU_live_same_thread_default) {
+	READ_EVENTS(DEFAULT_RINGBUF_MODE, LIVE_SAME_THREAD_MODE, 0);
+}
+
+///////////////////////////
+// Sorted linked list
+///////////////////////////
+
+// sll = sorted linked list
+TEST(modern_bpf, read_1_buffer_1_CPU_pre_fetched_sll) {
+	READ_EVENTS(SORTED_LINKED_LIST_RINGBUF_MODE, PRE_FETCHED_MODE, 1);
+}
+
+TEST(modern_bpf, read_1_buffer_2_CPU_pre_fetched_sll) {
+	READ_EVENTS(SORTED_LINKED_LIST_RINGBUF_MODE, PRE_FETCHED_MODE, 2);
+}
+
+TEST(modern_bpf, read_1_buffer_all_CPU_pre_fetched_sll) {
+	READ_EVENTS(SORTED_LINKED_LIST_RINGBUF_MODE, PRE_FETCHED_MODE, 0);
+}
+
+TEST(modern_bpf, read_1_buffer_1_CPU_live_same_thread_sll) {
+	READ_EVENTS(SORTED_LINKED_LIST_RINGBUF_MODE, LIVE_SAME_THREAD_MODE, 1);
+}
+
+TEST(modern_bpf, read_1_buffer_2_CPU_live_same_thread_sll) {
+	READ_EVENTS(SORTED_LINKED_LIST_RINGBUF_MODE, LIVE_SAME_THREAD_MODE, 2);
+}
+
+TEST(modern_bpf, read_1_buffer_all_CPU_live_same_thread_sll) {
+	READ_EVENTS(SORTED_LINKED_LIST_RINGBUF_MODE, LIVE_SAME_THREAD_MODE, 0);
+}
+
+TEST(modern_bpf, check_refill_mode) {
+	char error_buffer[FILENAME_MAX] = {0};
+	int ret = 0;
+	scap_t* h = open_modern_bpf_engine(error_buffer,
+	                                   &ret,
+	                                   8 * 1024 * 1024,
+	                                   1,
+	                                   false,
+	                                   {PPM_SC_OPEN_BY_HANDLE_AT},
+	                                   SORTED_LINKED_LIST_RINGBUF_MODE);
+	ASSERT_FALSE(!h || ret != SCAP_SUCCESS)
+	        << "unable to open modern bpf engine with one ring buffer per CPU: " << error_buffer
+	        << std::endl;
+
+	check_refill(h);
 	scap_close(h);
 }

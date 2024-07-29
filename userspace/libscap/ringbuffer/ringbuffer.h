@@ -208,10 +208,10 @@ static inline void ringbuffer_advance_to_evt(scap_device* dev, scap_evt* event) 
  *               gets stored
  * \param pflags [out] where the flags for the event get stored
  */
-static inline int32_t ringbuffer_next(struct scap_device_set* devset,
-                                      scap_evt** pevent,
-                                      uint16_t* pdevid,
-                                      uint32_t* pflags) {
+static inline int32_t ringbuffer_next_basic(struct scap_device_set* devset,
+                                            scap_evt** pevent,
+                                            uint16_t* pdevid,
+                                            uint32_t* pflags) {
 	uint32_t j;
 	uint64_t min_ts = 0xffffffffffffffffLL;
 	scap_evt* pe = NULL;
@@ -333,4 +333,23 @@ static inline uint64_t ringbuffer_get_max_buf_used(struct scap_device_set* devse
 	}
 
 	return max;
+}
+
+// Used only in the fork
+#include <libscap/ringbuffer/sysdig/optimized_ringbuffer.h>
+
+static __always_inline int32_t ringbuffer_next(struct scap_device_set* devset,
+                                               scap_evt** pevent,
+                                               uint16_t* pdevid,
+                                               uint32_t* pflags) {
+	switch(devset->m_ringbuffer_mode) {
+	case SORTED_LINKED_LIST_RINGBUF_MODE:
+		return ringbuffer_next_sorted_linked_list(devset, pevent, pdevid, pflags);
+	case DEFAULT_RINGBUF_MODE:
+		return ringbuffer_next_basic(devset, pevent, pdevid, pflags);
+	default:
+		snprintf(devset->m_lasterr, SCAP_LASTERR_SIZE, "invalid ringbuffer mode");
+		assert(false);
+		return SCAP_FAILURE;
+	}
 }

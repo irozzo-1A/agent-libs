@@ -528,6 +528,8 @@ int32_t scap_kmod_init(scap_t *handle, scap_open_args *oargs) {
 	       &oargs->ppm_sc_of_interest,
 	       sizeof(interesting_ppm_sc_set));
 
+	devset->m_ringbuffer_mode = oargs->ringbuffer_mode;
+
 	return SCAP_SUCCESS;
 }
 
@@ -796,12 +798,14 @@ int32_t scap_kmod_set_snaplen(struct scap_engine_handle engine, uint32_t snaplen
 	//
 	// Force a flush of the read buffers, so we don't capture events with the old snaplen
 	//
-	for(j = 0; j < devset->m_ndevs; j++) {
-		ringbuffer_readbuf(&devset->m_devs[j],
-		                   &devset->m_devs[j].m_sn_next_event,
-		                   &devset->m_devs[j].m_sn_len);
+	if(devset->m_ringbuffer_mode != SORTED_LINKED_LIST_RINGBUF_MODE) {
+		for(j = 0; j < devset->m_ndevs; j++) {
+			ringbuffer_readbuf(&devset->m_devs[j],
+			                   &devset->m_devs[j].m_sn_next_event,
+			                   &devset->m_devs[j].m_sn_len);
 
-		devset->m_devs[j].m_sn_len = 0;
+			devset->m_devs[j].m_sn_len = 0;
+		}
 	}
 	return SCAP_SUCCESS;
 }
@@ -860,12 +864,14 @@ int32_t scap_kmod_set_fullcapture_port_range(struct scap_engine_handle engine,
 	//
 	// Force a flush of the read buffers, so we don't capture events with the old snaplen
 	//
-	for(j = 0; j < devset->m_ndevs; j++) {
-		ringbuffer_readbuf(&devset->m_devs[j],
-		                   &devset->m_devs[j].m_sn_next_event,
-		                   &devset->m_devs[j].m_sn_len);
+	if(devset->m_ringbuffer_mode != SORTED_LINKED_LIST_RINGBUF_MODE) {
+		for(j = 0; j < devset->m_ndevs; j++) {
+			ringbuffer_readbuf(&devset->m_devs[j],
+			                   &devset->m_devs[j].m_sn_next_event,
+			                   &devset->m_devs[j].m_sn_len);
 
-		devset->m_devs[j].m_sn_len = 0;
+			devset->m_devs[j].m_sn_len = 0;
+		}
 	}
 
 	return SCAP_SUCCESS;
@@ -888,12 +894,14 @@ int32_t scap_kmod_set_statsd_port(struct scap_engine_handle engine, const uint16
 	// Force a flush of the read buffers, so we don't
 	// capture events with the old snaplen
 	//
-	for(j = 0; j < devset->m_ndevs; j++) {
-		ringbuffer_readbuf(&devset->m_devs[j],
-		                   &devset->m_devs[j].m_sn_next_event,
-		                   &devset->m_devs[j].m_sn_len);
+	if(devset->m_ringbuffer_mode != SORTED_LINKED_LIST_RINGBUF_MODE) {
+		for(j = 0; j < devset->m_ndevs; j++) {
+			ringbuffer_readbuf(&devset->m_devs[j],
+			                   &devset->m_devs[j].m_sn_next_event,
+			                   &devset->m_devs[j].m_sn_len);
 
-		devset->m_devs[j].m_sn_len = 0;
+			devset->m_devs[j].m_sn_len = 0;
+		}
 	}
 
 	return SCAP_SUCCESS;

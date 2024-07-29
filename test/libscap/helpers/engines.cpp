@@ -170,6 +170,11 @@ void check_event_order(scap_t *h) {
 	ASSERT_EQ(scap_stop_capture(h), SCAP_SUCCESS)
 	        << "unable to stop the capture: " << scap_getlasterr(h) << std::endl;
 
+	scap_stats stats;
+	scap_get_stats(h, &stats);
+	std::cout << "n_evts: " << stats.n_evts << std::endl;
+	std::cout << "n_drops: " << stats.n_drops << std::endl;
+
 	scap_evt *evt = NULL;
 	uint16_t buffer_id = 0;
 	uint32_t flags = 0;
@@ -178,14 +183,30 @@ void check_event_order(scap_t *h) {
 	/* if we hit 5 consecutive timeouts it means that all buffers are empty (approximation) */
 	uint16_t timeouts = 0;
 
+	// Used for debug
+	// for(int i = 0; i < EVENTS_TO_ASSERT; i++)
+	// {
+	// 	printf("%d) Event %d: (%s)\n", i, events_to_assert[i],
+	// 	       scap_get_event_info_table()[events_to_assert[i]].name);
+	// }
+	// printf("\n\n");
+
 	for(int i = 0; i < EVENTS_TO_ASSERT; i++) {
+		// printf("%d) Searching for event %d: (%s)\n", i, events_to_assert[i],
+		//        scap_get_event_info_table()[events_to_assert[i]].name);
 		while(true) {
 			ret = scap_next(h, &evt, &buffer_id, &flags);
 			if(ret == SCAP_SUCCESS) {
 				timeouts = 0;
 				if(evt->tid == actual_pid && evt->type == events_to_assert[i]) {
 					/* We found our event */
+					// printf("Found Event %d: (%s)\n", evt->type,
+					//        scap_get_event_info_table()[evt->type].name);
+
 					break;
+				} else if(evt->tid == actual_pid) {
+					// printf("Other Event %d: (%s)\n", evt->type,
+					//        scap_get_event_info_table()[evt->type].name);
 				}
 			} else if(ret == SCAP_TIMEOUT) {
 				timeouts++;

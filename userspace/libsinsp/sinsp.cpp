@@ -312,6 +312,7 @@ void sinsp::open_common(scap_open_args* oargs,
 	oargs->log_fn = &sinsp_scap_log_fn;
 	oargs->proc_scan_timeout_ms = m_proc_scan_timeout_ms;
 	oargs->proc_scan_log_interval_ms = m_proc_scan_log_interval_ms;
+	oargs->ringbuffer_mode = m_ringbuffer_mode;
 
 	m_h = scap_alloc();
 	if(m_h == NULL) {
@@ -649,6 +650,12 @@ void sinsp::open_udig(const std::string& socket_path,
 	}
 	strlcpy(params.udig_socket_path, socket_path.c_str(), sizeof(params.udig_socket_path));
 	oargs.engine_params = &params;
+
+	// The ring buffer optimized algorithm is currently not supported by udig engine
+	if(m_ringbuffer_mode == ringbuffer_mode_t::SORTED_LINKED_LIST_RINGBUF_MODE) {
+		throw sinsp_exception(
+		        "The optimized ring buffer mode is not supported by the udig engine.");
+	}
 
 	struct scap_platform* platform = scap_linux_alloc_platform(::on_new_entry_from_proc, this);
 	open_common(&oargs, &scap_udig_engine, platform, SINSP_MODE_LIVE);

@@ -26,6 +26,9 @@ limitations under the License.
 #include <driver/ppm_events_public.h>
 #include <libscap/scap_log.h>
 
+// Fork-only
+#include <libscap/ringbuffer/sysdig/common/ringbuffer_mode.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -47,6 +50,7 @@ typedef struct scap_open_args {
 	                                // should be cut short with success return
 	uint64_t proc_scan_log_interval_ms;  //< Interval for logging progress messages from /proc scan
 	void* engine_params;                 ///< engine-specific params.
+	enum ringbuffer_mode_t ringbuffer_mode;  ///< ringbuffer mode.
 } scap_open_args;
 
 #ifdef __cplusplus

@@ -30,11 +30,11 @@ static __always_inline void __OPTIMIZE_O3 get_first_ring_event(int pos) {
 	/* If the consumer reaches the producer update the producer position to
 	 * get the newly collected events.
 	 */
-	if((g_state.cons_pos[pos] + g_state.b_state[pos].off) >= g_state.prod_pos[pos]) {
+	if((g_state.cons_pos[pos] + g_state.b_state[pos].off) == g_state.prod_pos[pos]) {
 		// We increment the producer position.
 		g_state.prod_pos[pos] = smp_load_acquire(r->producer_pos);
-		// If the consumer is still >= producer it means we don't have new events.
-		if((g_state.cons_pos[pos] + g_state.b_state[pos].off) >= g_state.prod_pos[pos]) {
+		// If the consumer is still == producer it means we don't have new events.
+		if((g_state.cons_pos[pos] + g_state.b_state[pos].off) == g_state.prod_pos[pos]) {
 			g_state.b_state[pos].e_size = 0;
 			g_state.b_state[pos].e_p = NULL;
 			return;

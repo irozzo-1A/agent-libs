@@ -143,13 +143,6 @@ int open_engine(int argc, char** argv) {
 		return EXIT_FAILURE;
 	}
 
-	/* Get current cwd as a base directory for the driver path */
-	char driver_path[FILENAME_MAX];
-	if(!getcwd(driver_path, FILENAME_MAX)) {
-		std::cerr << "Unable to get current dir" << std::endl;
-		return EXIT_FAILURE;
-	}
-
 	/* Parse CLI options */
 	int op = 0;
 	int long_index = 0;

@@ -2051,6 +2051,90 @@ TEST_F(sys_call_test32, fs_preadv) {
 		EXPECT_EQ(-22, pwrite2_res);
 	}
 }
+
+TEST_F(sys_call_test32, proc_mgmt_rel_path) {
+	bool write_enter = false;
+	bool write_exit = false;
+	bool right_file_path = false;
+	// file path relative to the current directory
+	std::string relative_file_path = "filename_xxyzz_32";
+	char cwd[1024];
+	if(!getcwd(cwd, 1024)) {
+		FAIL() << "Cannot get current directory.";
+	}
+	std::string file_path = std::string(cwd) + "/" + relative_file_path;
+
+	//
+	// FILTER
+	//
+	event_filter_t filter = [](sinsp_evt* evt) {
+		auto tinfo = evt->get_thread_info(false);
+		if(tinfo && tinfo->m_comm == "test_helper_32") {
+			switch(evt->get_type()) {
+			// We will focus on the write syscalls
+			case PPME_SYSCALL_WRITE_E:
+			case PPME_SYSCALL_WRITE_X:
+				return true;
+			default:
+				return false;
+			}
+		}
+		return false;
+	};
+
+	//
+	// TEST CODE
+	//
+	run_callback_t test = [relative_file_path](concurrent_object_handle<sinsp> inspector) {
+		// We use a strange name for the file to avoid conflicts.
+		// The test program will write `ABCDEFGHI` to the test file.
+		subprocess test_proc(LIBSINSP_TEST_PATH "/test_helper_32",
+		                     {"proc_mgmt", relative_file_path});
+		test_proc.wait();
+	};
+
+	//
+	// EVENTS VALDATION
+	//
+	captured_event_callback_t callback =
+	        [&write_enter, &write_exit, &right_file_path, file_path](const callback_param& param) {
+		        // Here we are sure that all the events we receive belongs to the `test_helper_32`
+		        // process because of the filter we set in the `filter` lambda.
+		        auto e = param.m_evt;
+		        ASSERT_TRUE(e->get_thread_info(false));
+		        ASSERT_TRUE(e->get_thread_info(false)->m_comm == "test_helper_32");
+
+		        switch(e->get_type()) {
+		        case PPME_SYSCALL_WRITE_E:
+			        // We use `2` because we want to check there is also the terminator immediately
+			        // after the "9"
+			        if(e->get_param_value_str("size", false) == "9") {
+				        write_enter = true;
+			        }
+			        break;
+
+		        case PPME_SYSCALL_WRITE_X:
+			        if(e->get_param_value_str("data", false) == "ABCDEFGHI") {
+				        write_exit = true;
+				        // If we matched the data this is the right write event and so we should
+				        // match also the filepath
+				        if(e->get_fd_info() && e->get_fd_info()->m_name == file_path) {
+					        right_file_path = true;
+				        } else {
+					        right_file_path = false;
+				        }
+			        }
+			        break;
+		        default:
+			        break;
+		        }
+	        };
+
+	ASSERT_NO_FATAL_FAILURE({ event_capture::run(test, callback, filter); });
+	ASSERT_TRUE(write_enter);
+	ASSERT_TRUE(write_exit);
+	ASSERT_TRUE(right_file_path);
+}
 #endif
 
 extern "C" {

@@ -15,7 +15,7 @@ on:
 
 jobs:
   paths-filter:
-    runs-on: ubuntu-latest
+    runs-on: agent-runner
     outputs:
       driver_schema_changed: ${{ steps.filter.outputs.driver_schema }}
     steps:
@@ -28,7 +28,7 @@ jobs:
             - 'driver/SCHEMA_VERSION'
 
   driver-schema:
-    runs-on: ubuntu-22.04
+    runs-on: agent-runner
     permissions:
       pull-requests: write
     needs: paths-filter

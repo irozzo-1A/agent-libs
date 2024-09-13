@@ -18,11 +18,11 @@ concurrency:
 jobs:
   build-libs-linux:
     name: build-libs-linux-${{ matrix.arch }} 😁 (${{ matrix.name }})
-    runs-on: ${{ (matrix.arch == 'arm64' && 'actuated-arm64-8cpu-16gb') || 'ubuntu-22.04' }}
+    runs-on: agent-runner
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        arch: [amd64]
         name: [system_deps, bundled_deps, system_deps_minimal, sanitizers]
         include:
           - name: system_deps
@@ -72,7 +72,7 @@ jobs:
 
   build-libs-linux-amd64-static:
     name: build-libs-linux-amd64-static 🎃
-    runs-on: ubuntu-latest
+    runs-on: agent-runner
     container:
       image: alpine:3.17
     steps:
@@ -97,7 +97,7 @@ jobs:
 
   build-shared-libs-linux-amd64:
     name: build-shared-libs-linux-amd64 🧐
-    runs-on: ubuntu-latest
+    runs-on: agent-runner
     steps:
       - name: Checkout Libs ⤵️
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -143,7 +143,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
+        os: [agent-windows-2022-runner]
         crt: [MultiThreaded, MultiThreadedDLL]
         include:
           - os: macos-latest
@@ -199,7 +199,7 @@ jobs:
   # This job checks that a bundled deps of libs is as static as possible
   test-libs-static:
     name: test-libs-static (bundled_deps)
-    runs-on: ubuntu-22.04
+    runs-on: agent-runner
     steps:
       - name: Checkout Libs ⤵️
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -329,7 +329,7 @@ jobs:
 
   build-libs-emscripten:
     name: build-libs-emscripten 🧐
-    runs-on: ubuntu-latest
+    runs-on: agent-runner
     steps:
       - name: Install deps ⛓️
         run: |

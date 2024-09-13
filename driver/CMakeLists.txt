@@ -148,6 +148,7 @@ set(DRIVER_SOURCES
 	ppm_fillers.h
 	ppm_flag_helpers.h
 	ppm_ringbuffer.h
+	ppm_syscall.h
 	syscall_table.c
 	syscall_table64.c
 	ppm_cputime.c

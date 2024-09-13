@@ -29,7 +29,12 @@ or GPL2.txt for full copies of the license.
 #include <linux/kernel.h>
 #include <asm/mman.h>
 #include <linux/in.h>
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 20)
+#include <linux/mount.h>
+#include "ppm_syscall.h"
+#else
 #include <asm/syscall.h>
+#endif
 #include "ppm_ringbuffer.h"
 #include "ppm_events_public.h"
 #include "ppm_events.h"

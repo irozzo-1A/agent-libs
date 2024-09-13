@@ -1,0 +1,120 @@
+name: OSS Auto Downstream
+on:
+  # Run sync on OSS 'master' once a day
+  schedule:
+    - cron: '0 8 * * *'
+  # Run sync with arbitrary branches with manual workflow dispatch
+  workflow_dispatch:
+    inputs:
+      oss-repo:
+        description: The GitHub repository used as a base for the sync (e.g. 'falcosecurity/libs')
+        required: true
+        type: string
+        default: falcosecurity/libs
+      oss-ref:
+        description: The git ref or branch of falcosecurity/libs used as a base for the sync (e.g. 'master')
+        required: true
+        type: string
+        default: master
+      fork-ref:
+        description: The git ref or branch of this repository from which picking the patches
+        type: string
+
+# check if any concurrent sync jobs in progress for the same OSS and fork refs
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.fork-ref || github.event.repository.default_branch }}-${{ inputs.oss-ref || 'master' }}
+  cancel-in-progress: true
+
+env:
+  TOKEN: "${{ secrets.GIT_TOKEN || secrets.GITHUB_TOKEN }}"
+  FORK_REPO: draios/agent-libs
+  OSS_REPO: ${{ inputs.oss-repo || 'falcosecurity/libs' }}
+  FORK_REF: ${{ inputs.fork-ref || github.event.repository.default_branch }}
+  OSS_REF: ${{ inputs.oss-ref || 'master' }}
+  SLACK_CHANNEL: dev-agent-oss-sync-ci
+
+jobs:
+  downstream-to-fork:
+    runs-on: agent-runner
+    name: Scrape and Port OSS PRs
+    steps:
+      - name: Install sync tool
+        run: |
+          LATEST=$(curl -sI https://github.com/jasondellaluce/synchro/releases/latest | awk '/location: /{gsub("\r","",$2);split($2,v,"/");print substr(v[8],2)}')
+          curl --fail -LS "https://github.com/jasondellaluce/synchro/releases/download/v${LATEST}/synchro_${LATEST}_linux_amd64.tar.gz" | tar -xz
+          sudo install -o root -g root -m 0755 synchro /usr/local/bin/synchro
+          synchro --version
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ env.TOKEN }}
+
+      - name: Scrape Pull Requests merged in OSS 
+        env:
+          GITHUB_TOKEN: ${{ env.TOKEN }}
+        run: |
+          synchro downstream suggest \
+              --verbose \
+              -c ${{ env.FORK_REF }} \
+              -C ${{ env.OSS_REF }} \
+              -R ${{ env.OSS_REPO }} \
+              --search-after=$(date --date="7 days ago" +%FT00:00:00Z) > /tmp/scrape.txt
+      
+      - name: Downstream Pull Requests into Fork
+        env:
+          GITHUB_TOKEN: ${{ env.TOKEN }}
+        run: |
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+          suggested_prs=$(cat /tmp/scrape.txt | cut -d ',' -f 1)
+          for pr_num in $suggested_prs; do
+            set +e
+            echo "Downstreaming https://github.com/${{ env.OSS_REPO }}/pull/${pr_num}"
+            synchro downstream \
+                --verbose \
+                -c ${{ env.FORK_REF }} \
+                -C ${{ env.OSS_REF }} \
+                -r ${{ env.FORK_REPO }} \
+                -R ${{ env.OSS_REPO }} \
+                -n $pr_num
+            status_code=$?
+            if [ $status_code -ne 0 ]; then
+              echo FAILURE
+              echo "* https://github.com/${{ env.OSS_REPO }}/pull/${pr_num}" >> /tmp/errors.txt
+            else
+              echo SUCCESS
+            fi
+            set -e
+          done 
+        
+      - name: Compose message
+        if: success() || failure()
+        id: compose-msg
+        run: |
+          if test -f "/tmp/errors.txt"; then
+            echo "Failed downstreaming the following pull requests:" >> /tmp/message.txt
+            echo "" >> /tmp/message.txt
+            cat /tmp/errors.txt >> /tmp/message.txt
+            echo "" >> /tmp/message.txt
+            echo "Workflow: https://github.com/${{ env.FORK_REPO }}/actions/runs/${{ github.run_id }}" >> /tmp/message.txt
+            echo "has-message=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Read message file
+        if: (success() || failure()) && steps.compose-msg.outputs.has-message == 'true'
+        id: read_file
+        uses: andstor/file-reader-action@v1
+        with:
+          path: /tmp/message.txt
+
+      - name: Send Slack message
+        if: (success() || failure()) && steps.compose-msg.outputs.has-message == 'true'
+        uses: ./.github/actions/sysdig-send-slack
+        with:
+          title: ":red_circle: :arrow_right: Downstreaming | ${{ env.FORK_REPO }}"
+          token: ${{ secrets.SLACK_TOKEN }}
+          recipient: ${{ env.SLACK_CHANNEL }}
+          text: ${{ steps.read_file.outputs.contents }}

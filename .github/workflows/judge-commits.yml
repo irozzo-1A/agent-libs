@@ -1,0 +1,62 @@
+name: Sync Quality Check
+on:
+  pull_request:
+
+# Checks if any concurrent jobs under the same pull request or branch are being executed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  TOKEN: "${{ secrets.GIT_TOKEN || secrets.GITHUB_TOKEN }}"
+
+jobs:
+  judge-commits:
+    runs-on: agent-runner
+    name: Judge PR commits
+    steps:
+      - name: Check PR title
+        id: 'check-title'
+        run: |
+          echo "downstream=${{ startsWith(github.event.pull_request.title, 'downstream(#') }}" >> "$GITHUB_OUTPUT"
+      - name: Install sync tool
+        if: (steps.check-title.outputs.downstream != 'true')
+        run: |
+          LATEST=$(curl -sI https://github.com/jasondellaluce/synchro/releases/latest | awk '/location: /{gsub("\r","",$2);split($2,v,"/");print substr(v[8],2)}')
+          curl --fail -LS "https://github.com/jasondellaluce/synchro/releases/download/v${LATEST}/synchro_${LATEST}_linux_amd64.tar.gz" | tar -xz
+          sudo install -o root -g root -m 0755 synchro /usr/local/bin/synchro
+          synchro --version
+      - name: Checkout code
+        if: (steps.check-title.outputs.downstream != 'true')
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ env.TOKEN }}
+      - name: Get PR commits
+        if: (steps.check-title.outputs.downstream != 'true')
+        id: 'get-pr-commits'
+        uses: tim-actions/get-pr-commits@master
+        with:
+          token: ${{ env.TOKEN }}
+      - name: Get commit hashes
+        if: (steps.check-title.outputs.downstream != 'true') && (steps.get-pr-commits.outputs.commits != '')
+        id: hashes
+        uses: actions/github-script@v7.0.1
+        with:
+          result-encoding: string
+          script: |
+              const commits = ${{ steps.get-pr-commits.outputs.commits }}
+              var hashes = ""
+              for (const commit of commits) {
+                hashes += commit.sha + ";"
+                console.log("Found PR commit: " + commit.sha)
+              }
+              return hashes
+      - name: Judge each commit
+        if: (steps.check-title.outputs.downstream != 'true') && (steps.hashes.outputs.result != '')
+        run: |
+          IFS=";" read -a hashes <<< "${{ steps.hashes.outputs.result }}"
+          for i in "${hashes[@]}"; do
+            echo Judging commit ${i}
+            synchro judge "${i}"
+          done

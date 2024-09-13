@@ -1,0 +1,136 @@
+name: OSS Sync
+on:
+  # Run sync on OSS 'master' once a day
+  schedule:
+    - cron: '0 8 * * *'
+  # Run sync with arbitrary branches with manual workflow dispatch
+  workflow_dispatch:
+    inputs:
+      oss-repo:
+        description: The GitHub repository used as a base for the sync (e.g. 'falcosecurity/libs')
+        required: true
+        type: string
+        default: falcosecurity/libs
+      oss-ref:
+        description: The OSS git ref or branch used as a base for the sync (e.g. 'master')
+        required: true
+        type: string
+        default: master
+      fork-ref:
+        description: The git ref or branch of this repository from which picking the patches
+        type: string
+
+# check if any concurrent sync jobs in progress for the same OSS and fork refs
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.fork-ref || github.event.repository.default_branch }}-${{ inputs.oss-ref || 'master' }}
+  cancel-in-progress: true
+
+env:
+  TOKEN: "${{ secrets.GIT_TOKEN || secrets.GITHUB_TOKEN }}"
+  FORK_REPO: draios/agent-libs
+  OSS_REPO: ${{ inputs.oss-repo || 'falcosecurity/libs' }}
+  AGENT_REPO: draios/agent
+  FORK_SYNC_REF: ${{ inputs.fork-ref || github.event.repository.default_branch }}
+  OSS_SYNC_REF: ${{ inputs.oss-ref || 'master' }}
+  SYNC_BRANCH: oss-sync-${{ inputs.oss-ref || 'master' }}
+  SLACK_CHANNEL: dev-agent-oss-sync-ci
+
+jobs:
+  sync-fork:
+    runs-on: agent-runner
+    name: Sync fork with OSS
+    steps:
+      - name: Install sync tool
+        run: |
+          LATEST=$(curl -sI https://github.com/jasondellaluce/synchro/releases/latest | awk '/location: /{gsub("\r","",$2);split($2,v,"/");print substr(v[8],2)}')
+          curl --fail -LS "https://github.com/jasondellaluce/synchro/releases/download/v${LATEST}/synchro_${LATEST}_linux_amd64.tar.gz" | tar -xz
+          sudo install -o root -g root -m 0755 synchro /usr/local/bin/synchro
+          synchro --version
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ env.TOKEN }}
+
+      - name: Run sync
+        env:
+          GITHUB_TOKEN: ${{ env.TOKEN }}
+        run: |
+          git config --global rerere.enabled true
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+          # pull latest conflict resolution memory updates
+          synchro conflict pull
+          
+          # we want to print on screen, but also catch issues in case we found some
+          synchro sync \
+              --verbose \
+              -r ${{ env.FORK_REPO }} -c ${{ env.FORK_SYNC_REF }} \
+              -R ${{ env.OSS_REPO }} -C ${{ env.OSS_SYNC_REF }} \
+              -b ${{ env.SYNC_BRANCH }} \
+            > /tmp/sync-output.txt
+
+      # push the sync branch regardless of the work being finished or not
+      # note: `success() || failure()` will skip in case of cancelled workflow
+      - name: Push sync branch
+        if: success() || failure()
+        run: |
+          cur_branch=$(git branch --show-current)
+          git checkout ${{ env.SYNC_BRANCH }}
+          git push --force origin ${{ env.SYNC_BRANCH }}
+          git checkout $cur_branch
+      
+      # on success, send a notification to the Agent repo so that a workflow
+      # can be dispatched after the updates of this repo's synched branch
+      - name: Dispatch update on Agent repository (success)
+        if: success()
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ env.TOKEN }} # required for the dispatching on another repo
+          repository: ${{ env.AGENT_REPO }}
+          event-type: oss-sync-complete
+          client-payload: '{"repo": "${{ env.FORK_REPO }}", "branch": "${{ env.SYNC_BRANCH }}"}'
+        
+      - name: Compose message (success)
+        if: success()
+        run: |
+          cat <<EOT >> /tmp/msg.txt
+          Sync **success** on https://github.com/${{ env.FORK_REPO }}
+          * Branch: https://github.com/${{ env.FORK_REPO }}/tree/${{ env.SYNC_BRANCH }}
+          * Workflow: https://github.com/${{ env.FORK_REPO }}/actions/runs/${{ github.run_id }}
+          * Upstream ref: https://github.com/${{ env.OSS_REPO }}/tree/${{ env.OSS_SYNC_REF }}
+          * Downstream ref: https://github.com/${{ env.FORK_REPO }}/tree/${{ env.FORK_SYNC_REF }}
+          EOT
+
+      - name: Compose message (failure)
+        if: failure()
+        run: |
+          cat <<EOT >> /tmp/msg.txt
+          Sync **failure** on https://github.com/${{ env.FORK_REPO }}
+          * Workflow: https://github.com/${{ env.FORK_REPO }}/actions/runs/${{ github.run_id }}
+          * Upstream ref: https://github.com/${{ env.OSS_REPO }}/tree/${{ env.OSS_SYNC_REF }}
+          EOT
+
+      - name: Append sync output to message
+        if: success() || failure()
+        run: |
+          echo >> /tmp/msg.txt
+          cat /tmp/sync-output.txt >> /tmp/msg.txt
+
+      - name: Read message file
+        if: success() || failure()
+        id: read_file
+        uses: andstor/file-reader-action@v1
+        with:
+          path: /tmp/msg.txt
+
+      - name: Send Slack message
+        if: success() || failure()
+        uses: ./.github/actions/sysdig-send-slack
+        with:
+          title: "${{ job.status == 'success' && ':large_green_circle:' || ':red_circle:' }} :cyclone: Sync | ${{ env.FORK_REPO }}"
+          token: ${{ secrets.SLACK_TOKEN }}
+          recipient: ${{ env.SLACK_CHANNEL }}
+          text: ${{ steps.read_file.outputs.contents }}

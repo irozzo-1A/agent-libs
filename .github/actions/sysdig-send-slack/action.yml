@@ -1,0 +1,54 @@
+name: 'Send Slack'
+inputs:
+  text:
+    description: "Message formatted as Markdown"
+    required: true
+    type: string
+  title:
+    description: "Title of the message"
+    default: " "
+    type: string
+  recipient:
+    description: "The recipient Slack channel/account"
+    required: true
+    type: string
+  token:
+    description: "The Slack token required for sending the message"
+    required: true
+    type: string
+runs:
+  using: "composite"
+  steps:
+    - name: Format Slack message
+      id: slack-md-fmt
+      uses: LoveToKnow/slackify-markdown-action@v1.0.2
+      with:
+        text: "${{ inputs.text }}"
+
+    - name: Send Slack message
+      uses: slackapi/slack-github-action@v1.24.0
+      env:
+        SLACK_BOT_TOKEN: ${{ inputs.token }}
+      with:
+        channel-id: ${{ inputs.recipient }}
+        payload: |
+          {
+            "text": "${{ steps.slack-md-fmt.outputs.text}}",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "${{ inputs.title }}",
+                  "emoji": true
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "${{ steps.slack-md-fmt.outputs.text}}"
+                }
+              }
+            ]
+          }

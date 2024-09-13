@@ -1,0 +1,34 @@
+name: OSS Sync Post-Run
+
+on:
+  workflow_run:
+    workflows:
+      - "CI Build"
+    types:
+      - completed
+
+env:
+  TOKEN: "${{ secrets.GIT_TOKEN || secrets.GITHUB_TOKEN }}"
+  FORK_REPO: draios/agent-libs
+  SLACK_CHANNEL: dev-agent-oss-sync-ci
+
+jobs:
+  send-message:
+    runs-on: agent-runner
+    if: startsWith(github.event.workflow_run.head_branch, 'oss-sync-') && (github.event.workflow_run.head_branch != github.event.repository.default_branch)
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ env.TOKEN }}
+      - name: Send Slack message
+        uses: ./.github/actions/sysdig-send-slack
+        with:
+          token: ${{ secrets.SLACK_TOKEN }}
+          recipient: ${{ env.SLACK_CHANNEL }}
+          title: "${{ github.event.workflow_run.conclusion == 'success' && ':large_green_circle:' || ':red_circle:' }} :gear: Build & Tests | ${{ env.FORK_REPO }}"
+          text: |
+            Build and tests **${{ github.event.workflow_run.conclusion }}** after sync on https://github.com/${{ env.FORK_REPO }}
+            * Branch: https://github.com/${{ env.FORK_REPO }}/tree/${{ github.event.workflow_run.head_branch }}
+            * Workflow: ${{ github.event.workflow_run.html_url }}

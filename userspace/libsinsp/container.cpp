@@ -30,6 +30,7 @@ limitations under the License.
 #include <libsinsp/container_engine/lxc.h>
 #include <libsinsp/container_engine/mesos.h>
 #include <libsinsp/container_engine/bpm.h>
+#include <libsinsp/container_engine/ecs.h>
 #endif  // MINIMAL_BUILD
 #include <libsinsp/container_engine/static_container.h>
 
@@ -292,6 +293,7 @@ sinsp_container_manager::map_ptr_t sinsp_container_manager::get_containers() con
 
 void sinsp_container_manager::add_container(const sinsp_container_info::ptr_t& container_info,
                                             sinsp_threadinfo* thread) {
+	std::shared_ptr<sinsp_threadinfo> tinfo_ptr;
 	set_lookup_status(container_info->m_id,
 	                  container_info->m_type,
 	                  container_info->get_lookup_status());
@@ -299,6 +301,11 @@ void sinsp_container_manager::add_container(const sinsp_container_info::ptr_t& c
 	{
 		auto containers = m_containers.lock();
 		(*containers)[container_info->m_id] = container_info;
+	}
+
+	if(!thread) {
+		tinfo_ptr = container_info->get_tinfo(m_inspector);
+		thread = tinfo_ptr.get();
 	}
 
 	for(const auto& new_cb : m_new_callbacks) {
@@ -595,6 +602,11 @@ void sinsp_container_manager::create_engines() {
 		auto bpm_engine = std::make_shared<container_engine::bpm>(*this);
 		m_container_engines.push_back(bpm_engine);
 		m_container_engine_by_type[CT_BPM] = bpm_engine;
+	}
+	if(m_container_engine_mask & (1 << CT_ECS)) {
+		auto ecs_engine = std::make_shared<container_engine::ecs>(*this);
+		m_container_engines.push_back(ecs_engine);
+		m_container_engine_by_type[CT_ECS] = ecs_engine;
 	}
 #endif  // _WIN32
 #endif  // MINIMAL_BUILD

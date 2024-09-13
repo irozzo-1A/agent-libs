@@ -142,7 +142,8 @@ if(NOT MINIMAL_BUILD AND NOT EMSCRIPTEN)
 
 	if(NOT WIN32 AND NOT APPLE)
 		target_sources(
-			sinsp PRIVATE cgroup_limits.cpp container_engine/cri.cpp grpc_channel_registry.cpp
+			sinsp PRIVATE cgroup_limits.cpp container_engine/cri.cpp container_engine/ecs.cpp
+						  grpc_channel_registry.cpp
 		)
 	endif()
 endif()

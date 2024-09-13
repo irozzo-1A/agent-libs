@@ -264,11 +264,18 @@ static inline int32_t ringbuffer_next(struct scap_device_set* devset,
 				 *
 				 * This leads to ordering issues, where we e.g. emit procexit from ptrace
 				 * before the actual events coming from the process (via libudigembed).
+				 *
+				 * Note: we take care to only read the ring buffer pointers once. Otherwise, we
+				 * could end up in a situation like in the previous version of this code:
+				 * - READBUF to potentially get any new events
+				 * - GET_BUF_POINTERS to see if the buffer is empty
+				 *
+				 * If an event arrived between the two checks, we ended up with a non-empty buffer,
+				 * while we still had dev->m_sn_len==0 (from READBUF). This triggered the check
+				 * below and caused SCAP_FAILURE returns.
 				 */
 				READBUF(dev, &dev->m_sn_next_event, &dev->m_sn_len);
-				uint64_t head, tail, read_size;
-				GET_BUF_POINTERS(dev, &head, &tail, &read_size);
-				if(read_size == 0) {
+				if(dev->m_sn_len == 0) {
 					continue;
 				}
 			} else {

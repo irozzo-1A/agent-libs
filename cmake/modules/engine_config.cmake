@@ -20,6 +20,8 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
 	if(BUILD_LIBSCAP_MODERN_BPF)
 		set(HAS_ENGINE_MODERN_BPF On)
 	endif()
+
+	set(HAS_ENGINE_UDIG On)
 endif()
 
 # gVisor is currently only supported on Linux x86_64

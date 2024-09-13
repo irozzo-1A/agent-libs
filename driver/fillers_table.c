@@ -14,7 +14,8 @@ or GPL2.txt for full copies of the license.
 #include "ppm.h"
 #endif /* __KERNEL__ */
 
-#if defined(__KERNEL__)
+#if defined(__KERNEL__) || defined(UDIG)  // note: we need this in agent-libs to avoid pupulating
+                                          // the fillers table with null
 #define FILLER_REF(x) f_##x, PPM_FILLER_##x
 #else
 #define FILLER_REF(x) 0, PPM_FILLER_##x

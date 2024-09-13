@@ -193,6 +193,7 @@ public:
 	        bool online_only = true,
 	        const libsinsp::events::set<ppm_sc_code>& ppm_sc_of_interest = {});
 	virtual void open_test_input(scap_test_input_data* data, sinsp_mode_t mode = SINSP_MODE_TEST);
+	virtual void open_udig();
 
 	void fseek(uint64_t filepos) { scap_fseek(m_h, filepos); }
 

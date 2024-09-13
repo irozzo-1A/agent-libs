@@ -57,6 +57,10 @@ extern const struct scap_vtable scap_modern_bpf_engine;
 extern const struct scap_vtable scap_test_input_engine;
 #endif
 
+#ifdef HAS_ENGINE_UDIG
+extern const struct scap_vtable scap_udig_engine;
+#endif
+
 #ifdef __cplusplus
 }
 #endif

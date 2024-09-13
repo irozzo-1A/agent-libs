@@ -631,6 +631,18 @@ void sinsp::open_test_input(scap_test_input_data* data, sinsp_mode_t mode) {
 #endif
 }
 
+void sinsp::open_udig() {
+#ifdef HAS_ENGINE_UDIG
+	scap_open_args oargs{};
+
+	struct scap_platform* platform = scap_linux_alloc_platform(::on_new_entry_from_proc, this);
+	open_common(&oargs, &scap_udig_engine, platform, SINSP_MODE_LIVE);
+
+#else
+	throw sinsp_exception("UDIG engine is not supported in this build");
+#endif
+}
+
 /*=============================== OPEN METHODS ===============================*/
 
 /*=============================== Engine related ===============================*/

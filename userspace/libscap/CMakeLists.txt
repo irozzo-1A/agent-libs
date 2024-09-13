@@ -183,6 +183,11 @@ if(HAS_ENGINE_MODERN_BPF)
 	target_include_directories(scap_engine_modern_bpf PRIVATE ${PROJECT_BINARY_DIR}/driver/src)
 endif()
 
+if(HAS_ENGINE_UDIG)
+	add_subdirectory(engine/udig2)
+	target_link_libraries(scap PUBLIC scap_engine_udig)
+endif()
+
 if(HAS_ENGINE_GVISOR)
 	add_subdirectory(engine/gvisor)
 	# The static and shared build differs here because a shared scap_engine_gvisor will result in

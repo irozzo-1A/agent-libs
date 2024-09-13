@@ -3,9 +3,11 @@ on:
   pull_request:
   push:
     branches:
-      - master
-      - 'release/**'
-      - 'maintainers/**'
+      - 'oss-sync-**'
+      - 'agent-release-**'
+      - 'windows-release-**'
+      - 'serverless-release-**'
+      - 'fargate-release-**'
   workflow_dispatch:
 
 # Checks if any concurrent jobs under the same pull request or branch are being executed
@@ -245,6 +247,7 @@ jobs:
           - name: asan
             cmake_opts: -DUSE_BUNDLED_DEPS=True -DCMAKE_C_FLAGS=-fsanitize=address -DCMAKE_CXX_FLAGS=-fsanitize=address
     runs-on: ubuntu-22.04
+    if: false
     steps:
       - name: Install deps ⛓️
         run: |

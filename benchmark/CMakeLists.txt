@@ -25,6 +25,33 @@ set(BENCHMARK_INCLUDE PRIVATE "${LIBSINSP_INCLUDE_DIRS}")
 file(GLOB_RECURSE SINSP_SUITE "${CMAKE_CURRENT_SOURCE_DIR}/libsinsp/*.cpp")
 list(APPEND BENCHMARK_SOURCES ${SINSP_SUITE})
 
+# ============================== Fork only ====================================
+
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/sysdig/sysdig_bench_var.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/sysdig_bench_var.h"
+)
+list(APPEND BENCHMARK_INCLUDE "${CMAKE_CURRENT_BINARY_DIR}") # used to include `bench_var.h`
+
+# Engine-specific benchmarks At the moment we enable them only if we build all the 3 drivers.
+if(BUILD_DRIVER
+   AND BUILD_BPF
+   AND BUILD_LIBSCAP_MODERN_BPF
+)
+	file(GLOB_RECURSE ENGINE_SUITE "${CMAKE_CURRENT_SOURCE_DIR}/sysdig/engines/*.cpp")
+	list(APPEND BENCHMARK_SOURCES ${ENGINE_SUITE})
+
+	list(APPEND BENCHMARK_DEPENDENCIES driver)
+	list(APPEND BENCHMARK_DEPENDENCIES bpf)
+	if(TARGET ProbeSkeleton)
+		list(APPEND BENCHMARK_DEPENDENCIES ProbeSkeleton)
+	endif()
+
+	add_executable(stressor "${CMAKE_CURRENT_SOURCE_DIR}/sysdig/stressor.c")
+	list(APPEND BENCHMARK_DEPENDENCIES stressor)
+endif()
+# ============================== Fork only ====================================
+
 add_compile_options(${FALCOSECURITY_LIBS_USERSPACE_COMPILE_FLAGS})
 add_link_options(${FALCOSECURITY_LIBS_USERSPACE_LINK_FLAGS})
 add_executable(bench ${BENCHMARK_SOURCES})

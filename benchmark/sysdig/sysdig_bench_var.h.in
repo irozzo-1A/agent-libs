@@ -1,0 +1,13 @@
+#pragma once
+
+// Absolute path to the kernel module file
+#define KERNEL_MODULE_PATH "${CMAKE_BINARY_DIR}/driver/scap.ko"
+
+// Kernel module name
+#define KERNEL_MODULE_NAME "${DRIVER_NAME}"
+
+// Absolute path to the bpf probe .o file
+#define BPF_PROBE_PATH "${CMAKE_BINARY_DIR}/driver/bpf/probe.o"
+
+// Ringbuffer stressor
+#define STRESSOR_PATH "${CMAKE_BINARY_DIR}/benchmark/stressor"

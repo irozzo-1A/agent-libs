@@ -1,7 +1,5 @@
 name: Deploy Github Pages
-on:
-  push:
-    branches: [master]
+on: {}
       
 permissions:
   contents: read

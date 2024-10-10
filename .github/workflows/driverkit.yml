@@ -1,8 +1,5 @@
 name: Driverkit
-on:
-  pull_request:
-    paths:
-      - 'driver/**'
+on: {}
 
 jobs:
   build-drivers:

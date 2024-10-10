@@ -1,9 +1,6 @@
 name: Update Syscalls
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 2 1 * *'
+on: {}
 
 jobs:
   update-syscalls:

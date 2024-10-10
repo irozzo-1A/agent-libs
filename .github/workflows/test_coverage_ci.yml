@@ -1,9 +1,5 @@
 name: Test Coverage CI
-on:
-  pull_request:
-  push:
-    branches:
-      - master
+on: {}
 
 # Checks if any concurrent jobs under the same pull request or branch are being executed
 concurrency:

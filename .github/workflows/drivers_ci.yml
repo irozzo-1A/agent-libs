@@ -1,5 +1,15 @@
 name: Drivers CI Build
-on: {}
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - 'release/**'
+      - 'maintainers/**'
+  workflow_dispatch:
+  # we cannot use paths key here since otherwise required_status_checks jobs won't run.
+  # See https://github.com/orgs/community/discussions/26251.
+  # We need to use the paths-filter job.
 
 # Checks if any concurrent jobs under the same pull request or branch are being executed
 concurrency:

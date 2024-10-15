@@ -1,6 +1,30 @@
 name: Test drivers against a matrix of kernels/distros
 
-on: {}
+on:
+  workflow_dispatch:
+    inputs:
+      libsversion:
+        description: 'libs version to be tested, eg: master'
+        type: string
+        required: false
+        default: 'master'
+      libsrepo:
+        description: 'libs repo to be tested, eg: falcosecurity/libs'
+        type: string
+        required: false
+        default: 'falcosecurity/libs'
+  workflow_call:    
+    inputs:
+      libsversion:
+        description: 'libs version to be tested, eg: master'
+        type: string
+        required: false
+        default: 'master'
+      libsrepo:
+        description: 'libs repo to be tested, eg: falcosecurity/libs'
+        type: string
+        required: false
+        default: 'falcosecurity/libs'
 
 concurrency:
   group: kernel-tests

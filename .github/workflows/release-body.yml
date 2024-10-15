@@ -1,5 +1,7 @@
 name: Generate release body for published releases
-on: {}
+on:
+  release:
+    types: [published]
 
 # Checks if any concurrent jobs is running for driver release CI and eventually wait for it.
 concurrency:

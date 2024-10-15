@@ -1,5 +1,7 @@
 name: Perf CI
-on: {}
+on:
+  pull_request:
+  workflow_dispatch:
 
 # Checks if any concurrent jobs under the same pull request or branch are being executed
 concurrency:

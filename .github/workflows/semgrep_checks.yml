@@ -1,5 +1,10 @@
 name: Semgrep Checks
-on: {}
+on:
+  pull_request:
+    branches:
+      - master
+      - 'release/**'
+      - 'maintainers/**'
 
 jobs:
   insecure-api:

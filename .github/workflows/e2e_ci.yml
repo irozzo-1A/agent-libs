@@ -1,5 +1,11 @@
 name: libsinsp e2e CI
-on: {}
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - 'release/**'
+  workflow_dispatch:
 
 # Checks if any concurrent jobs under the same pull request or branch are being executed
 concurrency:

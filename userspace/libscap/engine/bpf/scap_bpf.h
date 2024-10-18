@@ -41,16 +41,22 @@ static inline scap_evt *scap_bpf_evt_from_perf_sample(void *evt) {
 	return (scap_evt *)perf_evt->data;
 }
 
+static inline __u64 ring_buffer_read_head(struct perf_event_mmap_page *base) {
+	return smp_load_acquire(&base->data_head);
+}
+
+static inline void ring_buffer_write_tail(struct perf_event_mmap_page *base, __u64 tail) {
+	smp_store_release(&base->data_tail, tail);
+}
+
 static inline void scap_bpf_get_buf_pointers(scap_device *dev,
                                              uint64_t *phead,
                                              uint64_t *ptail,
                                              uint64_t *pread_size) {
 	struct perf_event_mmap_page *header = (struct perf_event_mmap_page *)dev->m_buffer;
 
-	*phead = header->data_head;
+	*phead = ring_buffer_read_head(header);
 	*ptail = header->data_tail;
-
-	mem_barrier();
 
 	uint64_t cons = *ptail % header->data_size;  // consumer position
 	uint64_t prod = *phead % header->data_size;  // producer position
@@ -149,15 +155,11 @@ static inline int32_t scap_bpf_advance_to_evt(struct scap_device *dev,
 
 /* This helper increments the consumer position */
 static inline void scap_bpf_advance_tail(struct scap_device *dev) {
-	struct perf_event_mmap_page *header;
-
-	header = (struct perf_event_mmap_page *)dev->m_buffer;
-
-	mem_barrier();
-
+	struct perf_event_mmap_page *header = (struct perf_event_mmap_page *)dev->m_buffer;
 	ASSERT(dev->m_lastreadsize > 0);
 	/* `header->data_tail` is the consumer position. */
-	header->data_tail += dev->m_lastreadsize;
+	uint64_t new_tail = header->data_tail + dev->m_lastreadsize;
+	ring_buffer_write_tail(header, new_tail);
 	dev->m_lastreadsize = 0;
 }
 

@@ -37,8 +37,6 @@ struct iovec {
 #include <libsinsp/state/table.h>
 #include <libsinsp/state/table_adapters.h>
 
-class blprogram;
-
 struct erase_fd_params {
 	bool m_remove_from_table;
 	int64_t m_fd;
@@ -623,12 +621,6 @@ public:
 	}
 
 	inline sinsp_evt::category& get_lastevent_category() { return m_lastevent_category; }
-
-	inline blprogram* get_blprogram() { return m_blprogram; }
-
-	inline const blprogram* get_blprogram() const { return m_blprogram; }
-
-	inline void set_blprogram(blprogram* v) { m_blprogram = v; }
 
 	sinsp_threadinfo* get_oldest_matching_ancestor(
 	        const std::function<int64_t(sinsp_threadinfo*)>& get_thread_id,

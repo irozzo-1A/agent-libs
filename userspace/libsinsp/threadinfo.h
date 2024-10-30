@@ -672,9 +672,6 @@ private:
 	        decltype(m_cgroups),
 	        libsinsp::state::pair_table_entry_adapter<std::string, std::string>>
 	        m_cgroups_table_adapter;
-
-	std::string m_cmd_line;
-	blprogram* m_blprogram;
 };
 
 /*@}*/

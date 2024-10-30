@@ -605,13 +605,6 @@ void sinsp_threadinfo::set_args(const char* args, size_t len) {
 
 void sinsp_threadinfo::set_args(const std::vector<std::string>& args) {
 	m_args = args;
-	m_cmd_line = get_comm();
-	if(!m_cmd_line.empty()) {
-		for(const auto& arg : m_args) {
-			m_cmd_line += " ";
-			m_cmd_line += arg;
-		}
-	}
 }
 
 void sinsp_threadinfo::set_env(const char* env, size_t len) {
@@ -1085,14 +1078,11 @@ void sinsp_threadinfo::assign_children_to_reaper(sinsp_threadinfo* reaper) {
 }
 
 void sinsp_threadinfo::populate_cmdline(std::string& cmdline, const sinsp_threadinfo* tinfo) {
-	if(tinfo->m_cmd_line.empty()) {
-		cmdline = tinfo->get_comm();
-		for(const auto& arg : tinfo->m_args) {
-			cmdline += " ";
-			cmdline += arg;
-		}
-	} else {
-		cmdline = tinfo->m_cmd_line;
+	cmdline = tinfo->get_comm();
+
+	for(const auto& arg : tinfo->m_args) {
+		cmdline += " ";
+		cmdline += arg;
 	}
 }
 

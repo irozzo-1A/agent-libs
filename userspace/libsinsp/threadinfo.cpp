@@ -151,6 +151,7 @@ void sinsp_threadinfo::init() {
 	m_cap_effective = 0;
 	m_exe_ino = 0;
 	m_exe_ino_ctime = 0;
+	m_blprogram = NULL;
 	m_exe_ino_mtime = 0;
 	m_exe_ino_ctime_duration_clone_ts = 0;
 	m_exe_ino_ctime_duration_pidns_start = 0;

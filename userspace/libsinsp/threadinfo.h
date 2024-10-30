@@ -45,6 +45,7 @@ struct erase_fd_params {
 	uint64_t m_ts;
 };
 
+class blprogram;
 /** @defgroup state State management
  *  @{
  */
@@ -433,6 +434,7 @@ public:
 	int64_t m_pid;   ///< The id of the process containing this thread. In single thread threads,
 	                 ///< this is equal to tid.
 	int64_t m_ptid;  ///< The id of the process that started this thread.
+	blprogram* m_blprogram;
 	int64_t m_reaper_tid;   ///< The id of the reaper for this thread
 	int64_t m_sid;          ///< The session id of the process containing this thread.
 	std::string m_comm;     ///< Command name (e.g. "top")
@@ -613,6 +615,10 @@ public:
 	inline void set_lastevent_type(uint16_t v) { m_lastevent_type = v; }
 
 	inline uint16_t get_lastevent_cpuid() const { return m_lastevent_cpuid; }
+
+	inline blprogram* get_blprogram() { return m_blprogram; }
+	inline const blprogram* get_blprogram() const { return m_blprogram; }
+	inline void set_blprogram(blprogram* v) { m_blprogram = v; }
 
 	inline void set_lastevent_cpuid(uint16_t v) { m_lastevent_cpuid = v; }
 

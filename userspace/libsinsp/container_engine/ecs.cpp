@@ -118,8 +118,13 @@ void libsinsp::container_engine::ecs::fetch_metadata() {
 		container_info.m_type = CT_ECS;
 		container_info.m_full_id = container_id;
 		container_info.m_id = truncate_container_id(container_id);
-		container_info.m_created_time =
-		        static_cast<int64_t>(get_epoch_utc_seconds(container["CreatedAt"].asString()));
+
+		if(!container.isMember("CreatedAt") || container["CreatedAt"].asString().empty()) {
+			container_info.m_created_time = static_cast<int64_t>(get_epoch_utc_seconds_now());
+		} else {
+			container_info.m_created_time =
+			        static_cast<int64_t>(get_epoch_utc_seconds(container["CreatedAt"].asString()));
+		}
 
 		container_info.m_name = container["Name"].asString();
 		container_info.m_image = container["Image"].asString();

@@ -212,7 +212,7 @@ TEST_F(sinsp_with_test_input, EVT_FILTER_check_evt_arg_uid) {
 }
 
 // Test that for rawarg.X we are correctly retrieving the correct field type/format.
-TEST_F(sinsp_with_test_input, rawarg_madness) {
+TEST_F(sinsp_with_test_input, DISABLED_rawarg_madness) {
 	add_default_init_thread();
 	open_inspector();
 

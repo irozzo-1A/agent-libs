@@ -640,6 +640,8 @@ public:
 
 	void update_main_fdtable();
 
+	void set_exepath(std::string&& exepath);
+
 private:
 	sinsp_threadinfo* get_cwd_root();
 	bool set_env_from_proc();

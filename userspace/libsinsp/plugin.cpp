@@ -1192,7 +1192,7 @@ bool sinsp_plugin::set_async_event_handler(async_event_handler_t handler) {
 	return rc == SS_PLUGIN_SUCCESS;
 }
 
-bool sinsp_plugin::dump(sinsp_dumper& dumper) {
+bool sinsp_plugin::dump_state(sinsp_dumper& dumper) {
 	if(!m_inited) {
 		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
 	}
@@ -1201,7 +1201,7 @@ bool sinsp_plugin::dump(sinsp_dumper& dumper) {
 		throw sinsp_exception("plugin " + m_name + "without async events cap used as dumper");
 	}
 
-	if(!m_handle->api.dump) {
+	if(!m_handle->api.dump_state) {
 		return false;
 	}
 
@@ -1255,7 +1255,7 @@ bool sinsp_plugin::dump(sinsp_dumper& dumper) {
 		return SS_PLUGIN_SUCCESS;
 	};
 
-	if(m_handle->api.dump(m_state, this, callback) != SS_PLUGIN_SUCCESS) {
+	if(m_handle->api.dump_state(m_state, this, callback) != SS_PLUGIN_SUCCESS) {
 		throw sinsp_exception("dump error for plugin '" + m_name + "' : " + m_last_owner_err);
 	}
 	return true;

@@ -268,7 +268,7 @@ jobs:
       - name: Build sinsp-example
         run: |
           mkdir -p build
-          cd build && cmake -DUSE_BUNDLED_DEPS=On -DBUILD_DRIVER=ON -DBUILD_LIBSCAP_MODERN_BPF=ON -DBUILD_BPF=On -DBUILD_LIBSCAP_GVISOR=On -DCREATE_TEST_TARGETS=Off -DENABLE_LIBSCAP_TESTS=Off ../
+          cd build && cmake -DUSE_BUNDLED_DEPS=On -DBUILD_DRIVER=ON -DBUILD_LIBSCAP_MODERN_BPF=Off -DBUILD_BPF=On -DBUILD_LIBSCAP_GVISOR=On -DCREATE_TEST_TARGETS=Off -DENABLE_LIBSCAP_TESTS=Off ../
           make -j$(nproc) sinsp-example
 
       - name: Ensure that sinsp-example with bundled deps is as static as possible

@@ -551,6 +551,9 @@ void sinsp_dns_manager::refresh(std::future<void> f_exit) {
 
 // match name with address
 bool sinsp_dns_manager::match(const char* name, int af, void* addr, uint64_t ts) {
+	if(!m_initialized) {
+		return false;
+	}
 	bool expect = false;
 	if(m_resolver_flag.compare_exchange_strong(expect, true)) {
 		m_resolver = std::make_unique<std::thread>(sinsp_dns_manager::refresh,
@@ -579,6 +582,9 @@ bool sinsp_dns_manager::match(const char* name, int af, void* addr, uint64_t ts)
 
 // resolve name by address
 std::string sinsp_dns_manager::name_of(int af, void* addr, uint64_t ts) {
+	if(!m_initialized) {
+		return {};
+	}
 	bool expect = false;
 	if(m_resolver_flag.compare_exchange_strong(expect, true)) {
 		m_resolver = std::make_unique<std::thread>(sinsp_dns_manager::refresh,
@@ -618,8 +624,10 @@ size_t sinsp_dns_manager::size() {
 
 // client call to clear cache
 void sinsp_dns_manager::clear_cache() {
-	G_LOG_FORMAT(sinsp_logger::SEV_DEBUG, "%s", "sinsp_dns_manager::clear_cache");
-	m_dns_cache->clear();
+	if(m_initialized) {
+		G_LOG_FORMAT(sinsp_logger::SEV_DEBUG, "%s", "sinsp_dns_manager::clear_cache");
+		m_dns_cache->clear();
+	}
 }
 
 // ctor

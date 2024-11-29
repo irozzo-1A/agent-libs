@@ -50,6 +50,7 @@ public:
 	void operator=(sinsp_dns_manager const &) = delete;
 
 	~sinsp_dns_manager();
+	void init() { m_initialized = true; }
 
 private:
 	sinsp_dns_manager();
@@ -64,4 +65,5 @@ private:
 	uint64_t m_erase_timeout;
 	uint64_t m_base_refresh_timeout;
 	uint64_t m_max_refresh_timeout;
+	bool m_initialized{false};
 };

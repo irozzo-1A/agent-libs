@@ -74,6 +74,7 @@ static string filter_string = "";
 static string file_path = "";
 static string bpf_path = "";
 static string udig_path = "";
+static string gvisor_config_path = "/etc/docker/runsc_falco_config.json";
 static unsigned long buffer_bytes_dim = DEFAULT_DRIVER_BUFFER_BYTES_DIM;
 static uint64_t max_events = UINT64_MAX;
 static std::shared_ptr<sinsp_plugin> plugin;
@@ -126,6 +127,7 @@ Options:
   -m, --modern_bpf                           modern BPF probe.
   -k, --kmod                                 Kernel module
   -u <path>, --user <path>                   Userspace engine (udig)
+  -G <config_path>, --gvisor <config_path>   Gvisor engine
   -s <path>, --scap_file <path>              Scap file
   -p <path>, --plugin <path>                 Plugin. Path can follow the pattern "filepath.so|init_cfg|open_params".
   -d <dim>, --buffer_dim <dim>               Dimension in bytes that every per-CPU buffer will have.
@@ -172,13 +174,17 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 	                                       {"remove-io-sc-state", no_argument, 0, 'q'},
 	                                       {"enable-glogger", no_argument, 0, 'g'},
 	                                       {"raw", no_argument, 0, 'r'},
+	                                       {"gvisor", optional_argument, 0, 'G'},
 	                                       {0, 0, 0, 0}};
 
 	bool format_set = false;
 	int op;
 	int long_index = 0;
-	while((op = getopt_long(argc, argv, "hf:jab:mku:s:p:d:o:En:zxqgr", long_options, &long_index)) !=
-	      -1) {
+	while((op = getopt_long(argc,
+	                        argv,
+	                        "hf:jab:mku:s:p:d:o:En:zxqgrG::",
+	                        long_options,
+	                        &long_index)) != -1) {
 		switch(op) {
 		case 'h':
 			usage();
@@ -202,6 +208,12 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 		case 'b':
 			select_engine(BPF_ENGINE);
 			bpf_path = optarg;
+			break;
+		case 'G':
+			engine_string = GVISOR_ENGINE;
+			if(optarg != nullptr) {
+				gvisor_config_path = optarg;
+			}
 			break;
 		case 'm':
 			select_engine(MODERN_BPF_ENGINE);
@@ -374,6 +386,11 @@ void open_engine(sinsp& inspector, libsinsp::events::set<ppm_sc_code> events_sc_
 		                      "",
 		                      plugin->id() == 0 ? sinsp_plugin_platform::SINSP_PLATFORM_FULL
 		                                        : sinsp_plugin_platform::SINSP_PLATFORM_HOSTINFO);
+	}
+#endif
+#ifdef HAS_ENGINE_GVISOR
+	else if(!engine_string.compare(GVISOR_ENGINE)) {
+		inspector.open_gvisor(gvisor_config_path, "", false, -1);
 	}
 #endif
 	else {

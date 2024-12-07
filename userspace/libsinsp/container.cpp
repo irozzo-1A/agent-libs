@@ -32,6 +32,7 @@ limitations under the License.
 #include <libsinsp/container_engine/mesos.h>
 #include <libsinsp/container_engine/bpm.h>
 #include <libsinsp/container_engine/ecs.h>
+#include <libsinsp/container_engine/containerd.h>
 #endif  // MINIMAL_BUILD
 #include <libsinsp/container_engine/static_container.h>
 
@@ -624,6 +625,11 @@ void sinsp_container_manager::create_engines() {
 		auto ecs_engine = std::make_shared<container_engine::ecs>(*this);
 		m_container_engines.push_back(ecs_engine);
 		m_container_engine_by_type[CT_ECS].push_back(ecs_engine);
+	}
+	if(m_container_engine_mask & (1 << CT_CONTAINERD)) {
+		auto containerd_engine = std::make_shared<container_engine::containerd>(*this);
+		m_container_engines.push_back(containerd_engine);
+		m_container_engine_by_type[CT_CONTAINERD].push_back(containerd_engine);
 	}
 #endif  // _WIN32
 #endif  // MINIMAL_BUILD

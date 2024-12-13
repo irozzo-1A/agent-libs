@@ -1194,7 +1194,8 @@ bool sinsp_plugin::set_async_event_handler(async_event_handler_t handler) {
 
 bool sinsp_plugin::dump_state(sinsp_dumper& dumper) {
 	if(!m_inited) {
-		throw sinsp_exception(std::string(s_not_init_err) + ": " + m_name);
+		// note: in case the plugin is not initialized, we want to silently skip the dumping
+		return false;
 	}
 
 	if(!(m_caps & CAP_ASYNC)) {

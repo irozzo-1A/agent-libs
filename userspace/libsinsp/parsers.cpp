@@ -1284,9 +1284,14 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt *evt, int64_t child_tid) {
 		return;
 	}
 
-	/* If there's a listener, invoke it */
+	//
+	// If there's a listener, add a callback to later invoke it.
+	//
 	if(m_inspector->get_observer()) {
-		m_inspector->get_observer()->on_clone(evt, new_child.get(), tid_collision);
+		m_inspector->m_post_process_cbs.emplace(
+		        [&new_child, tid_collision](sinsp_observer *observer, sinsp_evt *evt) {
+			        observer->on_clone(evt, new_child.get(), tid_collision);
+		        });
 	}
 
 	/* If we had to erase a previous entry for this tid and rebalance the table,
@@ -1300,8 +1305,6 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt *evt, int64_t child_tid) {
 		               new_child->m_comm.c_str());
 	}
 	/*=============================== ADD THREAD TO THE TABLE ===========================*/
-
-	return;
 }
 
 void sinsp_parser::parse_clone_exit_child(sinsp_evt *evt) {
@@ -1769,17 +1772,19 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt *evt) {
 	evt->set_tinfo(new_child.get());
 
 	//
-	// If there's a listener, invoke it
+	// If there's a listener, add a callback to later invoke it.
 	//
 	if(m_inspector->get_observer()) {
-		m_inspector->get_observer()->on_clone(evt, new_child.get(), tid_collision);
+		m_inspector->m_post_process_cbs.emplace(
+		        [&new_child, tid_collision](sinsp_observer *observer, sinsp_evt *evt) {
+			        observer->on_clone(evt, new_child.get(), tid_collision);
+		        });
 	}
 
 	/* If we had to erase a previous entry for this tid and rebalance the table,
 	 * make sure we reinitialize the child_tinfo pointer for this event, as the thread
 	 * generating it might have gone away.
 	 */
-
 	if(tid_collision != -1) {
 		reset(evt);
 		/* Right now we have collisions only on the clone() caller */
@@ -1789,7 +1794,6 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt *evt) {
 	}
 
 	/*=============================== CREATE NEW THREAD-INFO ===========================*/
-	return;
 }
 
 void sinsp_parser::parse_clone_exit(sinsp_evt *evt) {
@@ -2243,10 +2247,11 @@ void sinsp_parser::parse_execve_exit(sinsp_evt *evt) {
 	evt->get_tinfo()->compute_program_hash();
 
 	//
-	// If there's a listener, invoke it
+	// If there's a listener, add a callback to later invoke it.
 	//
 	if(m_inspector->get_observer()) {
-		m_inspector->get_observer()->on_execve(evt);
+		m_inspector->m_post_process_cbs.emplace(
+		        [](sinsp_observer *observer, sinsp_evt *evt) { observer->on_execve(evt); });
 	}
 
 	/* If any of the threads in a thread group performs an
@@ -2795,10 +2800,11 @@ void sinsp_parser::parse_bind_exit(sinsp_evt *evt) {
 	evt->get_fd_info()->m_name = evt->get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE);
 
 	//
-	// If there's a listener callback, invoke it
+	// If there's a listener, add a callback to later invoke it.
 	//
 	if(m_inspector->get_observer()) {
-		m_inspector->get_observer()->on_bind(evt);
+		m_inspector->m_post_process_cbs.emplace(
+		        [](sinsp_observer *observer, sinsp_evt *evt) { observer->on_bind(evt); });
 	}
 }
 
@@ -2990,7 +2996,6 @@ inline void sinsp_parser::fill_client_socket_info(sinsp_evt *evt,
 
 void sinsp_parser::parse_connect_exit(sinsp_evt *evt) {
 	const sinsp_evt_param *parinfo;
-	uint8_t *packed_data;
 	int64_t retval;
 	int64_t fd;
 	bool force_overwrite_stale_data = false;
@@ -3056,15 +3061,18 @@ void sinsp_parser::parse_connect_exit(sinsp_evt *evt) {
 		return;
 	}
 
-	packed_data = (uint8_t *)parinfo->m_val;
+	uint8_t *packed_data = (uint8_t *)parinfo->m_val;
 
 	fill_client_socket_info(evt, packed_data, force_overwrite_stale_data);
 
 	//
-	// If there's a listener callback, invoke it
+	// If there's a listener, add a callback to later invoke it.
 	//
 	if(m_inspector->get_observer()) {
-		m_inspector->get_observer()->on_connect(evt, packed_data);
+		m_inspector->m_post_process_cbs.emplace(
+		        [&packed_data](sinsp_observer *observer, sinsp_evt *evt) {
+			        observer->on_connect(evt, packed_data);
+		        });
 	}
 }
 
@@ -3152,8 +3160,14 @@ void sinsp_parser::parse_accept_exit(sinsp_evt *evt) {
 	fdi->m_name = evt->get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE);
 	fdi->m_flags = 0;
 
+	//
+	// If there's a listener, add a callback to later invoke it.
+	//
 	if(m_inspector->get_observer()) {
-		m_inspector->get_observer()->on_accept(evt, fd, packed_data, fdi.get());
+		m_inspector->m_post_process_cbs.emplace(
+		        [fd, &packed_data](sinsp_observer *observer, sinsp_evt *evt) {
+			        observer->on_accept(evt, fd, packed_data, evt->get_fd_info());
+		        });
 	}
 
 	//
@@ -3213,8 +3227,14 @@ void sinsp_parser::erase_fd(erase_fd_params *params) {
 		m_inspector->get_fds_to_remove().push_back(params->m_fd);
 	}
 
+	//
+	// If there's a listener, add a callback to later invoke it.
+	//
 	if(m_inspector->get_observer()) {
-		m_inspector->get_observer()->on_erase_fd(params);
+		m_inspector->m_post_process_cbs.emplace(
+		        [&params](sinsp_observer *observer, sinsp_evt *evt) {
+			        observer->on_erase_fd(params);
+		        });
 	}
 }
 
@@ -3683,8 +3703,6 @@ void sinsp_parser::parse_rw_exit(sinsp_evt *evt) {
 		}
 
 		if(eflags & EF_READS_FROM_FD) {
-			const char *data;
-			uint32_t datalen;
 			int32_t tupleparam = -1;
 
 			if(etype == PPME_SOCKET_RECVFROM_X) {
@@ -3747,20 +3765,23 @@ void sinsp_parser::parse_rw_exit(sinsp_evt *evt) {
 				parinfo = evt->get_param(1);
 			}
 
-			datalen = parinfo->m_len;
-			data = parinfo->m_val;
+			uint32_t datalen = parinfo->m_len;
+			const char *data = parinfo->m_val;
 
 			//
-			// If there's an fd listener, call it now
+			// If there's a listener, add a callback to later invoke it.
 			//
 			if(m_inspector->get_observer()) {
-				m_inspector->get_observer()->on_read(evt,
-				                                     tid,
-				                                     evt->get_tinfo()->m_lastevent_fd,
-				                                     evt->get_fd_info(),
-				                                     data,
-				                                     (uint32_t)retval,
-				                                     datalen);
+				m_inspector->m_post_process_cbs.emplace(
+				        [tid, &data, retval, datalen](sinsp_observer *observer, sinsp_evt *evt) {
+					        observer->on_read(evt,
+					                          tid,
+					                          evt->get_tinfo()->m_lastevent_fd,
+					                          evt->get_fd_info(),
+					                          data,
+					                          (uint32_t)retval,
+					                          datalen);
+				        });
 			}
 
 			//
@@ -3816,7 +3837,6 @@ void sinsp_parser::parse_rw_exit(sinsp_evt *evt) {
 #endif
 
 		} else {
-			const char *data;
 			uint32_t datalen;
 			int32_t tupleparam = -1;
 
@@ -3884,19 +3904,22 @@ void sinsp_parser::parse_rw_exit(sinsp_evt *evt) {
 				parinfo = evt->get_param(1);
 			}
 			datalen = parinfo->m_len;
-			data = parinfo->m_val;
+			const char *data = parinfo->m_val;
 
 			//
-			// If there's an fd listener, call it now
+			// If there's a listener, add a callback to later invoke it.
 			//
 			if(m_inspector->get_observer()) {
-				m_inspector->get_observer()->on_write(evt,
-				                                      tid,
-				                                      evt->get_tinfo()->m_lastevent_fd,
-				                                      evt->get_fd_info(),
-				                                      data,
-				                                      (uint32_t)retval,
-				                                      datalen);
+				m_inspector->m_post_process_cbs.emplace(
+				        [tid, &data, retval, datalen](sinsp_observer *observer, sinsp_evt *evt) {
+					        observer->on_write(evt,
+					                           tid,
+					                           evt->get_tinfo()->m_lastevent_fd,
+					                           evt->get_fd_info(),
+					                           data,
+					                           (uint32_t)retval,
+					                           datalen);
+				        });
 			}
 
 			// perform syslog decoding if applicable
@@ -3908,8 +3931,14 @@ void sinsp_parser::parse_rw_exit(sinsp_evt *evt) {
 		if(evt->get_fd_info()->m_type == SCAP_FD_IPV4_SOCK ||
 		   evt->get_fd_info()->m_type == SCAP_FD_IPV6_SOCK) {
 			evt->get_fd_info()->set_socket_failed();
+			//
+			// If there's a listener, add a callback to later invoke it.
+			//
 			if(m_inspector->get_observer()) {
-				m_inspector->get_observer()->on_socket_status_changed(evt);
+				m_inspector->m_post_process_cbs.emplace(
+				        [](sinsp_observer *observer, sinsp_evt *evt) {
+					        observer->on_socket_status_changed(evt);
+				        });
 			}
 		}
 	}
@@ -3932,7 +3961,6 @@ void sinsp_parser::parse_sendfile_exit(sinsp_evt *evt) {
 	//
 	if(retval >= 0) {
 		sinsp_evt *enter_evt = &m_tmp_evt;
-		int64_t fdin;
 
 		if(!retrieve_enter_event(enter_evt, evt)) {
 			return;
@@ -3941,13 +3969,16 @@ void sinsp_parser::parse_sendfile_exit(sinsp_evt *evt) {
 		//
 		// Extract the in FD
 		//
-		fdin = enter_evt->get_param(1)->as<int64_t>();
+		int64_t fdin = enter_evt->get_param(1)->as<int64_t>();
 
 		//
-		// If there's an fd listener, call it now
+		// If there's a listener, add a callback to later invoke it.
 		//
 		if(m_inspector->get_observer()) {
-			m_inspector->get_observer()->on_sendfile(evt, fdin, (uint32_t)retval);
+			m_inspector->m_post_process_cbs.emplace(
+			        [fdin, retval](sinsp_observer *observer, sinsp_evt *evt) {
+				        observer->on_sendfile(evt, fdin, (uint32_t)retval);
+			        });
 		}
 	}
 }
@@ -4103,8 +4134,13 @@ void sinsp_parser::parse_shutdown_exit(sinsp_evt *evt) {
 			return;
 		}
 
+		//
+		// If there's a listener, add a callback to later invoke it.
+		//
 		if(m_inspector->get_observer()) {
-			m_inspector->get_observer()->on_socket_shutdown(evt);
+			m_inspector->m_post_process_cbs.emplace([](sinsp_observer *observer, sinsp_evt *evt) {
+				observer->on_socket_shutdown(evt);
+			});
 		}
 	}
 }
@@ -5083,8 +5119,13 @@ void sinsp_parser::parse_getsockopt_exit(sinsp_evt *evt) {
 		} else {
 			evt->get_fd_info()->set_socket_connected();
 		}
+		//
+		// If there's a listener, add a callback to later invoke it.
+		//
 		if(m_inspector->get_observer()) {
-			m_inspector->get_observer()->on_socket_status_changed(evt);
+			m_inspector->m_post_process_cbs.emplace([](sinsp_observer *observer, sinsp_evt *evt) {
+				observer->on_socket_status_changed(evt);
+			});
 		}
 	}
 }

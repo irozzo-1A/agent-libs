@@ -623,7 +623,7 @@ void sinsp_container_manager::create_engines() {
 	if(m_container_engine_mask & (1 << CT_ECS)) {
 		auto ecs_engine = std::make_shared<container_engine::ecs>(*this);
 		m_container_engines.push_back(ecs_engine);
-		m_container_engine_by_type[CT_ECS] = ecs_engine;
+		m_container_engine_by_type[CT_ECS].push_back(ecs_engine);
 	}
 #endif  // _WIN32
 #endif  // MINIMAL_BUILD

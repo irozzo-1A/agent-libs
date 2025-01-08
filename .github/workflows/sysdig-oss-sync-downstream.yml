@@ -19,6 +19,10 @@ on:
       fork-ref:
         description: The git ref or branch of this repository from which picking the patches
         type: string
+      search-after:
+        description: Maximum 'updated' date (days ago) of the found PR after which the search should stop
+        type: string
+        default: 7
 
 # check if any concurrent sync jobs in progress for the same OSS and fork refs
 concurrency:
@@ -31,6 +35,7 @@ env:
   OSS_REPO: ${{ inputs.oss-repo || 'falcosecurity/libs' }}
   FORK_REF: ${{ inputs.fork-ref || github.event.repository.default_branch }}
   OSS_REF: ${{ inputs.oss-ref || 'master' }}
+  SEARCH_AFTER: ${{ inputs.search-after || '7' }}
   SLACK_CHANNEL: dev-agent-oss-sync-ci
 
 jobs:
@@ -60,7 +65,7 @@ jobs:
               -c ${{ env.FORK_REF }} \
               -C ${{ env.OSS_REF }} \
               -R ${{ env.OSS_REPO }} \
-              --search-after=$(date --date="7 days ago" +%FT00:00:00Z) > /tmp/scrape.txt
+              --search-after=$(date --date="${{ env.SEARCH_AFTER }} days ago" +%FT00:00:00Z) > /tmp/scrape.txt
       
       - name: Downstream Pull Requests into Fork
         env:

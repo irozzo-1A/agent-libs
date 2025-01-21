@@ -1805,6 +1805,10 @@ void sinsp::set_hostname_and_port_resolution_mode(bool enable) {
 	m_hostname_and_port_resolution_enabled = enable;
 }
 
+void sinsp::set_ancillary_data_processing(bool enable) {
+	m_ancillary_data_processing_enabled = enable;
+}
+
 void sinsp::set_max_evt_output_len(uint32_t len) {
 	m_max_evt_output_len = len;
 }

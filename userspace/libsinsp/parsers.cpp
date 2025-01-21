@@ -3792,46 +3792,50 @@ void sinsp_parser::parse_rw_exit(sinsp_evt *evt) {
 			// accordingly via procfs scan.
 			//
 #ifndef _WIN32
-			int32_t cmparam = -1;
-			if(etype == PPME_SOCKET_RECVMSG_X && evt->get_num_params() >= 5) {
-				cmparam = 4;
-			} else if(etype == PPME_SOCKET_RECVMMSG_X && evt->get_num_params() >= 6) {
-				cmparam = 5;
-			}
+			if(m_inspector->is_ancillary_data_processing_enabled()) {
+				int32_t cmparam = -1;
+				if(etype == PPME_SOCKET_RECVMSG_X && evt->get_num_params() >= 5) {
+					cmparam = 4;
+				} else if(etype == PPME_SOCKET_RECVMMSG_X && evt->get_num_params() >= 6) {
+					cmparam = 5;
+				}
 
-			if(cmparam != -1) {
-				parinfo = evt->get_param(cmparam);
-				if(parinfo->m_len > sizeof(cmsghdr)) {
-					cmsghdr cmsg;
-					memcpy(&cmsg, parinfo->m_val, sizeof(cmsghdr));
-					if(cmsg.cmsg_type == SCM_RIGHTS) {
-						char error[SCAP_LASTERR_SIZE];
-						scap_threadinfo scap_tinfo{};
+				if(cmparam != -1) {
+					parinfo = evt->get_param(cmparam);
+					if(parinfo->m_len > sizeof(cmsghdr)) {
+						cmsghdr cmsg;
+						memcpy(&cmsg, parinfo->m_val, sizeof(cmsghdr));
+						if(cmsg.cmsg_type == SCM_RIGHTS) {
+							char error[SCAP_LASTERR_SIZE];
+							scap_threadinfo scap_tinfo{};
 
-						memset(&scap_tinfo, 0, sizeof(scap_tinfo));
+							memset(&scap_tinfo, 0, sizeof(scap_tinfo));
 
-						m_inspector->m_thread_manager->thread_to_scap(*evt->get_tinfo(),
-						                                              &scap_tinfo);
+							m_inspector->m_thread_manager->thread_to_scap(*evt->get_tinfo(),
+							                                              &scap_tinfo);
 
-						// Store current fd; it might get changed by scap_get_fdlist below.
-						int64_t fd = -1;
-						if(evt->get_fd_info()) {
-							fd = evt->get_fd_info()->m_fd;
-						}
+							// Store current fd; it might get changed by scap_get_fdlist below.
+							int64_t fd = -1;
+							if(evt->get_fd_info()) {
+								fd = evt->get_fd_info()->m_fd;
+							}
 
-						// Get the new fds. The callbacks we have registered populate the fd table
-						// with the new file descriptors.
-						if(scap_get_fdlist(m_inspector->get_scap_platform(), &scap_tinfo, error) !=
-						   SCAP_SUCCESS) {
-							libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
-							                          "scap_get_fdlist failed: %s, proc table will "
-							                          "not be updated with new fds.",
-							                          error);
-						}
+							// Get the new fds. The callbacks we have registered populate the fd
+							// table with the new file descriptors.
+							if(scap_get_fdlist(m_inspector->get_scap_platform(),
+							                   &scap_tinfo,
+							                   error) != SCAP_SUCCESS) {
+								libsinsp_logger()->format(
+								        sinsp_logger::SEV_DEBUG,
+								        "scap_get_fdlist failed: %s, proc table will "
+								        "not be updated with new fds.",
+								        error);
+							}
 
-						// Force refresh event fdinfo
-						if(fd != -1) {
-							evt->set_fd_info(evt->get_tinfo()->get_fd(fd));
+							// Force refresh event fdinfo
+							if(fd != -1) {
+								evt->set_fd_info(evt->get_tinfo()->get_fd(fd));
+							}
 						}
 					}
 				}

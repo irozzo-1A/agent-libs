@@ -711,6 +711,18 @@ public:
 	}
 
 	/*!
+	 * \brief Set the ancillary data processing (i.e. SCM_RIGHTS)
+	 *
+	 * \note By default, ancillary data processing is enabled.
+	 *
+	 */
+	void set_ancillary_data_processing(bool enable);
+
+	bool is_ancillary_data_processing_enabled() const {
+		return m_ancillary_data_processing_enabled;
+	}
+
+	/*!
 	  \brief Set the runtime flag for resolving the timespan in a human
 	   readable mode.
 
@@ -1039,6 +1051,7 @@ private:
 	bool m_isfatfile_enabled;
 	bool m_isinternal_events_enabled;
 	bool m_hostname_and_port_resolution_enabled;
+	bool m_ancillary_data_processing_enabled = true;
 	char m_output_time_flag;
 	uint32_t m_max_evt_output_len;
 	sinsp_evt m_evt;

@@ -327,7 +327,7 @@ int f_sys_open_x(struct event_filler_arguments *args) {
 	uint64_t ino = 0;
 	int res;
 	int64_t retval;
-	enum ppm_overlay ol;
+	enum ppm_overlay ol = PPM_NOT_OVERLAY_FS;
 
 	/*
 	 * fd
@@ -3317,7 +3317,7 @@ int f_sys_creat_x(struct event_filler_arguments *args) {
 	uint64_t ino = 0;
 	int res;
 	int64_t retval;
-	enum ppm_overlay ol;
+	enum ppm_overlay ol = PPM_NOT_OVERLAY_FS;
 	int16_t creat_flags = 0;
 
 	/*
@@ -3881,7 +3881,7 @@ int f_sys_openat_x(struct event_filler_arguments *args) {
 	int res;
 	int32_t fd;
 	int64_t retval;
-	enum ppm_overlay ol;
+	enum ppm_overlay ol = PPM_NOT_OVERLAY_FS;
 
 	retval = (int64_t)syscall_get_return_value(current, args->regs);
 	res = val_to_ring(args, retval, 0, false, 0);
@@ -5407,7 +5407,7 @@ int f_sys_openat2_x(struct event_filler_arguments *args) {
 	int res;
 	int32_t fd;
 	int64_t retval;
-	enum ppm_overlay ol;
+	enum ppm_overlay ol = PPM_NOT_OVERLAY_FS;
 #ifdef __NR_openat2
 	struct open_how how;
 #endif
@@ -5565,7 +5565,7 @@ int f_sys_open_by_handle_at_x(struct event_filler_arguments *args) {
 	long retval = 0;
 	char *pathname = NULL;
 	int32_t mountfd = 0;
-	enum ppm_overlay ol;
+	enum ppm_overlay ol = PPM_NOT_OVERLAY_FS;
 
 	/* Parameter 1: ret (type: PT_FD) */
 	retval = syscall_get_return_value(current, args->regs);

@@ -176,6 +176,24 @@ int32_t gvisor_next(scap_engine_handle engine,
 	return HANDLE(engine)->next(pevent, pdevid, pflags);
 }
 
+int32_t gvisor_next_from_buffer(struct scap_engine_handle engine,
+                                scap_buffer_t buffer_h,
+                                scap_evt** pevent,
+                                uint32_t* pflags) {
+	// TODO: implement
+	return SCAP_FAILURE;
+}
+
+uint16_t gvisor_get_n_allocated_buffer_handles(struct scap_engine_handle engine) {
+	// TODO: implement
+	return 0;
+}
+
+scap_buffer_t gvisor_reserve_buffer_handle(struct scap_engine_handle engine) {
+	// TODO: implement
+	return SCAP_INVALID_BUFFER_HANDLE;
+}
+
 int32_t gvisor_configure(scap_engine_handle engine,
                          scap_setting setting,
                          unsigned long arg1,
@@ -208,24 +226,28 @@ uint64_t gvisor_get_max_buf_used(scap_engine_handle engine) {
 
 }  // anonymous namespace
 
-extern const scap_vtable scap_gvisor_engine = {.name = GVISOR_ENGINE,
-                                               .savefile_ops = nullptr,
+extern const scap_vtable scap_gvisor_engine = {
+        .name = GVISOR_ENGINE,
+        .savefile_ops = nullptr,
 
-                                               .alloc_handle = gvisor_alloc_handle,
-                                               .init = gvisor_init,
-                                               .get_flags = nullptr,
-                                               .free_handle = gvisor_free_handle,
-                                               .close = gvisor_close,
-                                               .next = gvisor_next,
-                                               .start_capture = gvisor_start_capture,
-                                               .stop_capture = gvisor_stop_capture,
-                                               .configure = gvisor_configure,
-                                               .get_stats = gvisor_get_stats,
-                                               .get_stats_v2 = gvisor_get_stats_v2,
-                                               .get_n_tracepoint_hit = gvisor_get_n_tracepoint_hit,
-                                               .get_n_devs = gvisor_get_n_devs,
-                                               .get_max_buf_used = gvisor_get_max_buf_used,
-                                               .get_api_version = nullptr,
-                                               .get_schema_version = nullptr};
+        .alloc_handle = gvisor_alloc_handle,
+        .init = gvisor_init,
+        .get_flags = nullptr,
+        .free_handle = gvisor_free_handle,
+        .close = gvisor_close,
+        .next = gvisor_next,
+        .next_from_buffer = gvisor_next_from_buffer,
+        .get_n_allocated_buffer_handles = gvisor_get_n_allocated_buffer_handles,
+        .reserve_buffer_handle = gvisor_reserve_buffer_handle,
+        .start_capture = gvisor_start_capture,
+        .stop_capture = gvisor_stop_capture,
+        .configure = gvisor_configure,
+        .get_stats = gvisor_get_stats,
+        .get_stats_v2 = gvisor_get_stats_v2,
+        .get_n_tracepoint_hit = gvisor_get_n_tracepoint_hit,
+        .get_n_devs = gvisor_get_n_devs,
+        .get_max_buf_used = gvisor_get_max_buf_used,
+        .get_api_version = nullptr,
+        .get_schema_version = nullptr};
 
 }  // extern "C"

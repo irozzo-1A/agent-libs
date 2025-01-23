@@ -1875,6 +1875,24 @@ static int32_t next(struct scap_engine_handle engine,
 	return ringbuffer_next(&HANDLE(engine)->m_dev_set, pevent, pdevid, pflags);
 }
 
+static int32_t next_from_buffer(struct scap_engine_handle engine,
+                                scap_buffer_t buffer_h,
+                                scap_evt **pevent,
+                                uint32_t *pflags) {
+	// TODO: implement
+	return SCAP_FAILURE;
+}
+
+static uint16_t get_n_allocated_buffer_handles(struct scap_engine_handle engine) {
+	// TODO: implement
+	return 0;
+}
+
+static scap_buffer_t reserve_buffer_handle(struct scap_engine_handle engine) {
+	// TODO: implement
+	return SCAP_INVALID_BUFFER_HANDLE;
+}
+
 static int32_t scap_bpf_handle_dropfailed(struct scap_engine_handle engine, bool drop_failed) {
 	struct bpf_engine *handle = engine.m_handle;
 	struct scap_bpf_settings settings;
@@ -2162,6 +2180,9 @@ const struct scap_vtable scap_bpf_engine = {
         .free_handle = free_handle,
         .close = scap_bpf_close,
         .next = next,
+        .next_from_buffer = next_from_buffer,
+        .get_n_allocated_buffer_handles = get_n_allocated_buffer_handles,
+        .reserve_buffer_handle = reserve_buffer_handle,
         .start_capture = scap_bpf_start_capture,
         .stop_capture = scap_bpf_stop_capture,
         .configure = configure,

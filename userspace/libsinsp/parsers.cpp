@@ -3671,6 +3671,47 @@ void sinsp_parser::parse_fspath_related_exit(sinsp_evt *evt) {
 	}
 }
 
+#ifndef _WIN32
+inline void sinsp_parser::process_recvmsg_ancillary_data(sinsp_evt *evt,
+                                                         sinsp_evt_param const *parinfo) const {
+	// Create a msg header to be used with CMSG_* macros.
+	msghdr msgh;
+	msgh.msg_control = (void *)parinfo->m_val;
+	msgh.msg_controllen = parinfo->m_len;
+	// Seek for SCM_RIGHTS control message headers and extract passed file
+	// descriptors.
+	for(cmsghdr *cmsg = CMSG_FIRSTHDR(&msgh); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msgh, cmsg)) {
+		if(cmsg->cmsg_type == SCM_RIGHTS) {
+			char error[SCAP_LASTERR_SIZE];
+			scap_threadinfo scap_tinfo{};
+			memset(&scap_tinfo, 0, sizeof(scap_tinfo));
+			m_inspector->m_thread_manager->thread_to_scap(*evt->get_tinfo(), &scap_tinfo);
+#define SCM_MAX_FD 253  // Taken from kernel.
+			int fds[SCM_MAX_FD];
+			unsigned long const data_size = cmsg->cmsg_len - CMSG_LEN(0);
+			unsigned long const fds_len = data_size / sizeof(int);
+			// Guard against malformed event, by checking that data size is a multiple of
+			// sizeof(int) (file descriptor size) and the control message doesn't contain more data
+			// than allowed by kernel constraints.
+			if(data_size % sizeof(int) || fds_len > SCM_MAX_FD) {
+				continue;
+			}
+#undef SCM_MAX_FD
+			memcpy(&fds, CMSG_DATA(cmsg), data_size);
+			for(int i = 0; i < fds_len; i++) {
+				if(scap_get_fdinfo(m_inspector->get_scap_platform(), &scap_tinfo, fds[i], error) !=
+				   SCAP_SUCCESS) {
+					libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
+					                          "scap_get_fdinfo failed: %s, proc table will not be "
+					                          "updated with new fd.",
+					                          error);
+				}
+			}
+		}
+	}
+}
+#endif
+
 void sinsp_parser::parse_rw_exit(sinsp_evt *evt) {
 	const sinsp_evt_param *parinfo;
 	int64_t retval;
@@ -3802,42 +3843,7 @@ void sinsp_parser::parse_rw_exit(sinsp_evt *evt) {
 
 				if(cmparam != -1) {
 					parinfo = evt->get_param(cmparam);
-					if(parinfo->m_len > sizeof(cmsghdr)) {
-						cmsghdr cmsg;
-						memcpy(&cmsg, parinfo->m_val, sizeof(cmsghdr));
-						if(cmsg.cmsg_type == SCM_RIGHTS) {
-							char error[SCAP_LASTERR_SIZE];
-							scap_threadinfo scap_tinfo{};
-
-							memset(&scap_tinfo, 0, sizeof(scap_tinfo));
-
-							m_inspector->m_thread_manager->thread_to_scap(*evt->get_tinfo(),
-							                                              &scap_tinfo);
-
-							// Store current fd; it might get changed by scap_get_fdlist below.
-							int64_t fd = -1;
-							if(evt->get_fd_info()) {
-								fd = evt->get_fd_info()->m_fd;
-							}
-
-							// Get the new fds. The callbacks we have registered populate the fd
-							// table with the new file descriptors.
-							if(scap_get_fdlist(m_inspector->get_scap_platform(),
-							                   &scap_tinfo,
-							                   error) != SCAP_SUCCESS) {
-								libsinsp_logger()->format(
-								        sinsp_logger::SEV_DEBUG,
-								        "scap_get_fdlist failed: %s, proc table will "
-								        "not be updated with new fds.",
-								        error);
-							}
-
-							// Force refresh event fdinfo
-							if(fd != -1) {
-								evt->set_fd_info(evt->get_tinfo()->get_fd(fd));
-							}
-						}
-					}
+					process_recvmsg_ancillary_data(evt, parinfo);
 				}
 			}
 #endif

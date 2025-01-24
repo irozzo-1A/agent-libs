@@ -861,9 +861,17 @@ TEST_F(sinsp_with_test_input, plugin_subtables) {
 
 	ASSERT_EQ(table->entries_count(), 0);
 
+	// start the event capture
+	// we coordinate with the plugin by sending open events: for each one received,
+	// the plugin will take a subsequent action on which we then assert the status
+	// note: we need to do this before adding our artificial threadinfo because
+	// the threads table is cleared up upon inspectors being opened
+	open_inspector();
+
 	// add a new entry to the thread table
-	ASSERT_NE(table->add_entry(5, table->new_entry()), nullptr);
-	auto entry = table->get_entry(5);
+	int64_t tid = 5;
+	ASSERT_NE(table->add_entry(tid, table->new_entry()), nullptr);
+	auto entry = table->get_entry(tid);
 	ASSERT_NE(entry, nullptr);
 	ASSERT_EQ(table->entries_count(), 1);
 
@@ -889,14 +897,9 @@ TEST_F(sinsp_with_test_input, plugin_subtables) {
 	ASSERT_NE(dfield, subtable->dynamic_fields()->fields().end());
 	auto dfieldacc = dfield->second.new_accessor<std::string>();
 
-	// start the event capture
-	// we coordinate with the plugin by sending open events: for each one received,
-	// the plugin will take a subsequent action on which we then assert the status
-	open_inspector();
-
 	// step #0: the plugin should populate the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",
@@ -917,7 +920,7 @@ TEST_F(sinsp_with_test_input, plugin_subtables) {
 
 	// step #1: the plugin should remove one entry from the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",
@@ -927,7 +930,7 @@ TEST_F(sinsp_with_test_input, plugin_subtables) {
 
 	// step #2: the plugin should cleae the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",
@@ -959,9 +962,17 @@ TEST_F(sinsp_with_test_input, plugin_subtables_array) {
 
 	ASSERT_EQ(table->entries_count(), 0);
 
+	// start the event capture
+	// we coordinate with the plugin by sending open events: for each one received,
+	// the plugin will take a subsequent action on which we then assert the status
+	// note: we need to do this before adding our artificial threadinfo because
+	// the threads table is cleared up upon inspectors being opened
+	open_inspector();
+
 	// add a new entry to the thread table
-	ASSERT_NE(table->add_entry(5, table->new_entry()), nullptr);
-	auto entry = table->get_entry(5);
+	int64_t tid = 5;
+	ASSERT_NE(table->add_entry(tid, table->new_entry()), nullptr);
+	auto entry = table->get_entry(tid);
 	ASSERT_NE(entry, nullptr);
 	ASSERT_EQ(table->entries_count(), 1);
 
@@ -984,14 +995,9 @@ TEST_F(sinsp_with_test_input, plugin_subtables_array) {
 	ASSERT_EQ(dfield->second.info(), libsinsp::state::typeinfo::of<std::string>());
 	auto dfieldacc = dfield->second.new_accessor<std::string>();
 
-	// start the event capture
-	// we coordinate with the plugin by sending open events: for each one received,
-	// the plugin will take a subsequent action on which we then assert the status
-	open_inspector();
-
 	// step #0: the plugin should populate the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",
@@ -1009,7 +1015,7 @@ TEST_F(sinsp_with_test_input, plugin_subtables_array) {
 
 	// step #1: the plugin should remove one entry from the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",
@@ -1019,7 +1025,7 @@ TEST_F(sinsp_with_test_input, plugin_subtables_array) {
 
 	// step #2: the plugin should cleae the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",
@@ -1052,9 +1058,17 @@ TEST_F(sinsp_with_test_input, plugin_subtables_array_pair) {
 
 	ASSERT_EQ(table->entries_count(), 0);
 
+	// start the event capture
+	// we coordinate with the plugin by sending open events: for each one received,
+	// the plugin will take a subsequent action on which we then assert the status
+	// note: we need to do this before adding our artificial threadinfo because
+	// the threads table is cleared up upon inspectors being opened
+	open_inspector();
+
 	// add a new entry to the thread table
-	ASSERT_NE(table->add_entry(5, table->new_entry()), nullptr);
-	auto entry = table->get_entry(5);
+	int64_t tid = 5;
+	ASSERT_NE(table->add_entry(tid, table->new_entry()), nullptr);
+	auto entry = table->get_entry(tid);
 	ASSERT_NE(entry, nullptr);
 	ASSERT_EQ(table->entries_count(), 1);
 
@@ -1086,14 +1100,9 @@ TEST_F(sinsp_with_test_input, plugin_subtables_array_pair) {
 	ASSERT_EQ(dfield_second->second.info(), libsinsp::state::typeinfo::of<std::string>());
 	auto dfield_second_acc = dfield_second->second.new_accessor<std::string>();
 
-	// start the event capture
-	// we coordinate with the plugin by sending open events: for each one received,
-	// the plugin will take a subsequent action on which we then assert the status
-	open_inspector();
-
 	// step #0: the plugin should populate the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",
@@ -1113,7 +1122,7 @@ TEST_F(sinsp_with_test_input, plugin_subtables_array_pair) {
 
 	// step #1: the plugin should remove one entry from the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",
@@ -1123,7 +1132,7 @@ TEST_F(sinsp_with_test_input, plugin_subtables_array_pair) {
 
 	// step #2: the plugin should cleae the fdtable
 	add_event_advance_ts(increasing_ts(),
-	                     0,
+	                     tid,
 	                     PPME_SYSCALL_OPEN_E,
 	                     3,
 	                     "/tmp/the_file",

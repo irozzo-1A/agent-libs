@@ -1717,7 +1717,7 @@ void sinsp::get_capture_stats(scap_stats* stats) const {
 }
 
 void sinsp::print_capture_stats(sinsp_logger::severity sev) const {
-	scap_stats stats;
+	scap_stats stats = {};
 	get_capture_stats(&stats);
 
 	libsinsp_logger()->format(
@@ -1864,7 +1864,7 @@ void sinsp::get_read_progress_plugin(double* nres, std::string* sres) const {
 		return;
 	}
 
-	uint32_t nplg;
+	uint32_t nplg = 0;
 	*sres = m_input_plugin->get_progress(nplg);
 
 	*nres = ((double)nplg) / 100;

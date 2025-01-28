@@ -47,6 +47,7 @@ limitations under the License.
 
 #include <libsinsp/capture_stats_source.h>
 #include <libsinsp/container.h>
+#include <libsinsp/cri_settings.h>
 #include <libsinsp/dumper.h>
 #include <libsinsp/event.h>
 #include <libsinsp/fdinfo.h>
@@ -890,6 +891,7 @@ public:
 	*/
 	void add_cri_socket_path(const std::string& path);
 	void set_cri_timeout(int64_t timeout_ms);
+	void set_cri_retry_parameters(const ::libsinsp::cri::retry_parameters& retry_parameters);
 	void set_cri_async(bool async);
 
 	void set_container_labels_max_len(uint32_t max_label_len);

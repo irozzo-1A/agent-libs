@@ -135,7 +135,12 @@ private:
 	// Return false if the update didn't happen (for example because the tuple is NULL)
 	bool update_fd(sinsp_evt* evt, const sinsp_evt_param* parinfo);
 #ifndef _WIN32
-	// Process recvmsg ancillary data
+	// Process file descriptors extracted from recvmsg ancillary data.
+	inline void process_recvmsg_ancillary_data_fds(int const* fds,
+	                                               size_t fds_len,
+	                                               scap_threadinfo* scap_tinfo,
+	                                               char* error) const;
+	// Process recvmsg ancillary data.
 	inline void process_recvmsg_ancillary_data(sinsp_evt* evt,
 	                                           sinsp_evt_param const* parinfo) const;
 #endif

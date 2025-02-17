@@ -3685,7 +3685,7 @@ struct ppm_cmsghdr {
 	        ((char *)(cmsg)) + offsetof(ppm_cmsghdr, field), \
 	        sizeof((cmsg)->field)))
 
-#define PPM_CMSG_ALIGN(len) (((len) + sizeof(size_t) - 1) & (size_t)~(sizeof(size_t) - 1))
+#define PPM_CMSG_ALIGN(len) (((len) + sizeof(size_t) - 1) & (size_t) ~(sizeof(size_t) - 1))
 
 #define PPM_CMSG_NXTHDR(msg_control, msg_controllen, cmsg) \
 	ppm_cmsg_nxthdr(msg_control, msg_controllen, cmsg)

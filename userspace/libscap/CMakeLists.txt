@@ -200,6 +200,7 @@ endif()
 # ##################################################################################################
 
 if(BUILD_LIBSCAP_EXAMPLES)
+	add_subdirectory(examples/00-vsockforward)
 	add_subdirectory(examples/01-open)
 	add_subdirectory(examples/02-validatebuffer)
 endif()

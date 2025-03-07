@@ -1,0 +1,11 @@
+# run from build directory
+# sudo docker build --tag jasondellaluce/scapvsock-client -f ./../userspace/libscap/examples/00-vsockforward/Dockerfile.client .
+
+FROM ubuntu:24.04 AS runner
+
+ENV HOST_ROOT /host
+ENV HOME /root
+
+COPY /libscap/examples/00-vsockforward/scap-vsockforward /usr/bin/scap-vsock-client
+
+CMD ["/usr/bin/scap-vsock-client"]

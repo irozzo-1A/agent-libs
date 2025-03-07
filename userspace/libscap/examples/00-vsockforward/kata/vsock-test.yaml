@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vsock-kata-client
+  namespace: kata
+  labels:
+    app: vsock-kata-client
+  annotations:
+    io.katacontainers.config.hypervisor.kernel: "/home/ubuntu/downloads/usr/share/kata-containers/vmlinux-6.12.13-147"
+spec:
+  replicas: 8
+  selector:
+    matchLabels:
+      app: vsock-kata-client
+  template:
+    metadata:
+      labels:
+        app: vsock-kata-client
+    spec:
+      runtimeClassName: kata-qemu
+      containers:
+      - name: vsock-client
+        image: docker.io/jasondellaluce/scapvsock-client
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vsock-kata-server
+  namespace: kata
+spec:
+  containers:
+  - name: vsock-server
+    image: docker.io/jasondellaluce/scapvsock-server
+    ports:
+      - containerPort: 5000

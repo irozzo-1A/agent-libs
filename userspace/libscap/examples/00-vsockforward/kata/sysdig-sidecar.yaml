@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sysdig-kata
+  namespace: kata
+  annotations:
+    # Specifies the custom kernel for the Kata guest VM -- the file should be made available in the node first
+    # This annotation should be manually enabled by adding "kernel" under "enable_annotations"
+    # in /opt/kata/share/defaults/kata-containers/configuration-qemu.toml
+    io.katacontainers.config.hypervisor.kernel: "/home/ubuntu/downloads/usr/share/kata-containers/vmlinux-6.12.13-147"
+spec:
+  runtimeClassName: kata-qemu
+  containers:
+  - name: nginx
+    image: nginx:1.14.2
+    ports:
+      - containerPort: 80
+
+  - name: sysdig-sidecar
+    image: docker.io/sysdig/sysdig
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/sleep"]
+    args: ["infinity"]
+    securityContext:
+      privileged: true
+    resources:
+      limits:
+        cpu: "1"
+      requests:
+        cpu: "1"
+    env:
+      - name: HOST_ROOT
+        value: /host
+      - name: SCAP_HOSTNAME
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
+      - name: POD_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+    volumeMounts:
+      - mountPath: /host/boot
+        name: boot-fs
+      - mountPath: /host/lib/modules
+        name: lib-modules
+        readOnly: true
+      - mountPath: /host/proc
+        name: proc-fs
+      - mountPath: /host/usr
+        name: usr-fs
+      - mountPath: /host/dev
+        name: dev-fs
+        readOnly: true
+      - name: sys-fs
+        mountPath: /sys/module
+  volumes:
+    - name: boot-fs
+      hostPath:
+        path: /boot
+    - name: lib-modules
+      hostPath:
+        path: /lib/modules
+    - name: usr-fs
+      hostPath:
+        path: /usr
+    - name: dev-fs
+      hostPath:
+        path: /dev
+    - name: sys-fs
+      hostPath:
+        path: /sys/module
+    - name: proc-fs
+      hostPath:
+        path: /proc

@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sysdig-kata
+  namespace: kata
+  annotations:
+    # Specifies the custom kernel for the Kata guest VM -- the file should be made available in the node first
+    # This annotation should be manually enabled by adding "kernel" under "enable_annotations"
+    # in /opt/kata/share/defaults/kata-containers/configuration-qemu.toml
+    io.katacontainers.config.hypervisor.kernel: "/home/ubuntu/downloads/usr/share/kata-containers/vmlinux-6.12.13-147"
+spec:
+  runtimeClassName: kata-qemu
+  imagePullSecrets:
+  - name: regcred
+  containers:
+  - name: nginx
+    image: nginx:1.14.2
+    ports:
+      - containerPort: 80
+
+  - name: sysdig-sidecar
+    image: falcosecurity/falco:latest
+    imagePullPolicy: IfNotPresent
+    command: ["falco"]
+    args: [
+      "-o", "engine.kind=modern_ebpf",
+      "-o", "log_level=debug",
+      "-o", "stdout_output.enabled=true",
+      "-o", "webserver.prometheus_metrics_enabled=true",
+      "-o", "metrics.enabled=true"
+    ]
+    securityContext:
+      privileged: true
+    resources:
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
+      requests:
+        cpu: "200m"
+        memory: "128Mi"
+    env:
+      - name: HOST_ROOT
+        value: /host
+      - name: FALCO_HOSTNAME
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
+      - name: POD_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      # - name: ACCESS_KEY
+      #   value: 92998719-2fa8-42f6-abae-d6ee1e1093fd
+      # - name: COLLECTOR
+      #   value: collector-staging.sysdigcloud.com
+      # - name: SYSDIG_AGENT_DRIVER
+      #   value: universal_ebpf
+    volumeMounts:
+      - mountPath: /host/boot
+        name: boot-fs
+      - mountPath: /host/lib/modules
+        name: lib-modules
+        readOnly: true
+      - mountPath: /host/proc
+        name: proc-fs
+      - mountPath: /host/usr
+        name: usr-fs
+      - mountPath: /host/dev
+        name: dev-fs
+        readOnly: true
+      - name: sys-fs
+        mountPath: /sys/module
+  volumes:
+    - name: boot-fs
+      hostPath:
+        path: /boot
+    - name: lib-modules
+      hostPath:
+        path: /lib/modules
+    - name: usr-fs
+      hostPath:
+        path: /usr
+    - name: dev-fs
+      hostPath:
+        path: /dev
+    - name: sys-fs
+      hostPath:
+        path: /sys/module
+    - name: proc-fs
+      hostPath:
+        path: /proc

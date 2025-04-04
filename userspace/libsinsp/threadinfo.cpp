@@ -1919,6 +1919,24 @@ void sinsp_thread_manager::dump_threads_to_file(scap_dumper_t* dumper) {
 	});
 }
 
+void sinsp_thread_manager::maybe_log_max_lookup(int64_t tid, bool scan_sockets) {
+	if(m_n_proc_lookups == m_max_n_proc_lookups) {
+		libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
+		                          "Reached max process lookup number (%d)"
+		                          ", duration=%" PRIu64 "ms",
+		                          m_n_proc_lookups,
+		                          m_n_proc_lookups_duration_ns / 1000000);
+	}
+	if(scan_sockets && m_n_proc_lookups == m_max_n_proc_socket_lookups) {
+		libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
+		                          "Reached max socket lookup number (%d), tid=%" PRIu64
+		                          ", duration=%" PRIu64 "ms",
+		                          m_n_proc_lookups,
+		                          tid,
+		                          m_n_proc_lookups_duration_ns / 1000000);
+	}
+}
+
 const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(int64_t tid,
                                                                     bool query_os_if_not_found,
                                                                     bool lookup_only,
@@ -1973,21 +1991,7 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(int64_t tid,
 			m_n_proc_lookups_duration_ns += (ts_end - ts_start);
 			m_n_proc_lookups++;
 
-			if(m_n_proc_lookups == m_max_n_proc_lookups) {
-				libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
-				                          "Reached max process lookup number (%d)"
-				                          ", duration=%" PRIu64 "ms",
-				                          m_n_proc_lookups,
-				                          m_n_proc_lookups_duration_ns / 1000000);
-			}
-			if(scan_sockets && m_n_proc_lookups == m_max_n_proc_socket_lookups) {
-				libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
-				                          "Reached max socket lookup number (%d), tid=%" PRIu64
-				                          ", duration=%" PRIu64 "ms",
-				                          m_n_proc_lookups,
-				                          tid,
-				                          m_n_proc_lookups_duration_ns / 1000000);
-			}
+			maybe_log_max_lookup(tid, scan_sockets);
 
 			if(m_proc_lookup_period && (ts_end - m_last_proc_lookup_period_start) >= m_proc_lookup_period) {
 				reset_thread_counters();

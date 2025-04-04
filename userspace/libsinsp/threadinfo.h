@@ -749,6 +749,8 @@ public:
 	                                              bool lookup_only = true,
 	                                              bool main_thread = false);
 
+	void maybe_log_max_lookup(int64_t tid, bool scan_sockets);
+
 	//
 	// Note: lookup_only should be used when the query for the thread is made
 	//       not as a consequence of an event for that thread arriving, but

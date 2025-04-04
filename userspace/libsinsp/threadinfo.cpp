@@ -1300,6 +1300,7 @@ static const auto s_threadinfo_static_fields = sinsp_threadinfo().static_fields(
 sinsp_thread_manager::sinsp_thread_manager(sinsp* inspector):
         built_in_table(s_thread_table_name, &s_threadinfo_static_fields),
         m_max_thread_table_size(m_thread_table_default_size),
+        m_last_proc_lookup_period_start(sinsp_utils::get_current_time_ns()),
         m_fdtable_dyn_fields(std::make_shared<libsinsp::state::dynamic_struct::field_infos>()) {
 	m_inspector = inspector;
 	if(m_inspector != nullptr) {
@@ -1962,13 +1963,14 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(int64_t tid,
 				scan_sockets = true;
 			}
 
-			uint64_t ts = sinsp_utils::get_current_time_ns();
+			uint64_t ts_start = sinsp_utils::get_current_time_ns();
 			if(scap_proc_get(m_inspector->get_scap_platform(), tid, &scap_proc, scan_sockets) ==
 			   SCAP_SUCCESS) {
 				have_scap_proc = true;
 			}
-			m_n_proc_lookups_duration_ns += sinsp_utils::get_current_time_ns() - ts;
+			uint64_t ts_end = sinsp_utils::get_current_time_ns();
 
+			m_n_proc_lookups_duration_ns += (ts_end - ts_start);
 			m_n_proc_lookups++;
 
 			if(m_n_proc_lookups == m_max_n_proc_lookups) {
@@ -1983,6 +1985,11 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(int64_t tid,
 				                          ", duration=%" PRIu64 "ms",
 				                          tid,
 				                          m_n_proc_lookups_duration_ns / 1000000);
+			}
+
+			if(m_proc_lookup_period && (ts_end - m_last_proc_lookup_period_start) >= m_proc_lookup_period) {
+				reset_thread_counters();
+				m_last_proc_lookup_period_start = ts_end;
 			}
 		}
 

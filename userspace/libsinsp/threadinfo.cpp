@@ -1975,14 +1975,16 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(int64_t tid,
 
 			if(m_n_proc_lookups == m_max_n_proc_lookups) {
 				libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
-				                          "Reached max process lookup number, duration=%" PRIu64
-				                          "ms",
+				                          "Reached max process lookup number (%d)"
+				                          ", duration=%" PRIu64 "ms",
+				                          m_n_proc_lookups,
 				                          m_n_proc_lookups_duration_ns / 1000000);
 			}
 			if(scan_sockets && m_n_proc_lookups == m_max_n_proc_socket_lookups) {
 				libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
-				                          "Reached max socket lookup number, tid=%" PRIu64
+				                          "Reached max socket lookup number (%d), tid=%" PRIu64
 				                          ", duration=%" PRIu64 "ms",
+				                          m_n_proc_lookups,
 				                          tid,
 				                          m_n_proc_lookups_duration_ns / 1000000);
 			}

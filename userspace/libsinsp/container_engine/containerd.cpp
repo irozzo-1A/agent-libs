@@ -56,7 +56,8 @@ containerd_async_source::containerd_async_source(const std::string &socket_path,
                                                  uint64_t max_wait_ms,
                                                  uint64_t ttl_ms,
                                                  container_cache_interface *cache):
-        container_async_source(max_wait_ms, ttl_ms, cache) {
+        container_async_source(max_wait_ms, ttl_ms, cache),
+        m_socket_path(socket_path) {
 	grpc::ChannelArguments args;
 	args.SetInt(GRPC_ARG_ENABLE_HTTP_PROXY, 0);
 	std::shared_ptr<grpc::Channel> channel =
@@ -111,7 +112,9 @@ containerd_async_source::containerd_async_source(const std::string &socket_path,
 
 containerd_async_source::~containerd_async_source() {
 	this->stop();
-	libsinsp_logger()->format(sinsp_logger::SEV_DEBUG, "containerd_async: Source destructor");
+	libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
+	                          "containerd_async(%s): Source destructor",
+	                          m_socket_path.c_str());
 }
 
 grpc::Status containerd_async_source::list_container_resp(
@@ -154,9 +157,13 @@ libsinsp::container_engine::containerd::containerd(container_cache_interface &ca
 			continue;
 		}
 
-		auto socket_path = scap_get_host_root() + std::string(p);
+		std::string socket_path = std::string(scap_get_host_root()) + std::string(p);
 		struct stat s = {};
 		if(stat(socket_path.c_str(), &s) != 0 || (s.st_mode & S_IFMT) != S_IFSOCK) {
+			libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
+			                          "containerd (%s): %s is not a sock.",
+			                          socket_path.c_str(),
+			                          socket_path.c_str());
 			continue;
 		}
 
@@ -165,8 +172,14 @@ libsinsp::container_engine::containerd::containerd(container_cache_interface &ca
 		        std::make_unique<containerd_async_source>(socket_path, 0, 10000, cache_interface);
 		if(!m_containerd_info_source->is_ok()) {
 			m_containerd_info_source.reset(nullptr);
+			libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
+			                          "containerd (%s): cannot create connection.",
+			                          socket_path.c_str());
 			continue;
 		}
+		libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
+		                          "containerd (%s): ok",
+		                          socket_path.c_str());
 	}
 }
 
@@ -215,18 +228,18 @@ bool containerd_async_source::parse(const containerd_lookup_request &request,
 	}
 
 	// Usually the image has this form: `docker.io/library/ubuntu:22.04`
-	auto raw_image_splits = sinsp_split(containers[0].image(), ':');
+	const auto &retrieved_image = containers[0].image();
+	auto image_name_index = retrieved_image.rfind('/');
+	auto tag_index = retrieved_image.rfind(':');
 
 	container.m_id = container_id;
+	container.m_name = container.m_id;
 	container.m_full_id = containers[0].id();
 	// We assume that the last `/`-separated field is the image
-	container.m_image = raw_image_splits[0]
-	                            .substr(raw_image_splits[0].rfind("/") + 1)
-	                            .append(":")
-	                            .append(raw_image_splits.back());
+	container.m_image = retrieved_image.substr(image_name_index + 1);
 	// and the first part is the repo
-	container.m_imagerepo = raw_image_splits[0].substr(0, raw_image_splits[0].rfind("/"));
-	container.m_imagetag = raw_image_splits[1];
+	container.m_imagerepo = retrieved_image.substr(0, image_name_index);
+	container.m_imagetag = retrieved_image.substr(tag_index + 1);
 	container.m_type = CT_CONTAINERD;
 
 	// Retrieve the image digest.
@@ -301,7 +314,7 @@ void libsinsp::container_engine::containerd::parse_containerd(
 		done = m_containerd_info_source && m_containerd_info_source->lookup(request, result);
 	} else {
 		libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
-		                          "containerd_async (%s): Starting synchronous lookup",
+		                          "containerd_sync (%s): Starting synchronous lookup",
 		                          request.container_id.c_str());
 
 		done = m_containerd_info_source && m_containerd_info_source->lookup_sync(request, result);
@@ -322,69 +335,59 @@ void libsinsp::container_engine::containerd::parse_containerd(
 
 bool libsinsp::container_engine::containerd::resolve(sinsp_threadinfo *tinfo,
                                                      bool query_os_for_missing_info) {
-	auto container = sinsp_container_info();
+	container_cache_interface *cache = &container_cache();
 	std::string container_id, cgroup;
 
 	if(!matches_runc_cgroups(tinfo, CONTAINERD_CGROUP_LAYOUT, container_id, cgroup)) {
 		return false;
 	}
 
-	containerd_lookup_request request(container_id, CT_CONTAINERD, 0);
-
-	container_cache_interface *cache = &container_cache();
-	sinsp_container_info::ptr_t container_info = cache->get_container(request.container_id);
-
-	if(!container_info) {
-		if(!query_os_for_missing_info) {
-			auto container = sinsp_container_info();
-			container.m_type = CT_CONTAINERD;
-			container.m_id = request.container_id;
-			container.set_lookup_status(sinsp_container_lookup::state::SUCCESSFUL);
-			cache->notify_new_container(container, tinfo);
-			return true;
-		}
-
-		if(cache->should_lookup(request.container_id, request.container_type, m_engine_index)) {
-			libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
-			                          "containerd_async (%s): No existing container info",
-			                          request.container_id.c_str());
-
-			// give containerd a chance to return metadata for this container
-			cache->set_lookup_status(request.container_id,
-			                         request.container_type,
-			                         sinsp_container_lookup::state::STARTED,
-			                         m_engine_index);
-			parse_containerd(request, cache);
-		}
-		return false;
-	}
-
-	// Returning true will prevent other container engines from
-	// trying to resolve the container, so only return true if we
-	// have complete metadata.
-	return container_info->is_successful();
-
 	tinfo->m_container_id = container_id;
 
-	libsinsp::cgroup_limits::cgroup_limits_key key(container.m_id,
-	                                               tinfo->get_cgroup("cpu"),
-	                                               tinfo->get_cgroup("memory"),
-	                                               tinfo->get_cgroup("cpuset"));
+	containerd_lookup_request request(container_id, CT_CONTAINERD, m_engine_index);
 
-	libsinsp::cgroup_limits::cgroup_limits_value limits;
-	libsinsp::cgroup_limits::get_cgroup_resource_limits(key, limits);
-
-	container.m_memory_limit = limits.m_memory_limit;
-	container.m_cpu_shares = limits.m_cpu_shares;
-	container.m_cpu_quota = limits.m_cpu_quota;
-	container.m_cpu_period = limits.m_cpu_period;
-	container.m_cpuset_cpu_count = limits.m_cpuset_cpu_count;
-
-	if(container_cache().should_lookup(container.m_id, CT_CONTAINERD, m_engine_index)) {
-		container.m_name = container.m_id;
-		container.set_lookup_status(sinsp_container_lookup::state::SUCCESSFUL);
-		container_cache().add_container(std::make_shared<sinsp_container_info>(container), tinfo);
-		container_cache().notify_new_container(container, tinfo);
+	// Try to check if the container id was already encountered.
+	// If yes, the lookup is skipped.
+	if(!cache->should_lookup(request.container_id, request.container_type, m_engine_index)) {
+		return true;
 	}
-	return true;
+
+	auto container = sinsp_container_info();
+	container.m_type = CT_CONTAINERD;
+	container.m_id = request.container_id;
+
+	// note: query_os_for_missing_info is set to 'true' by default
+	if(query_os_for_missing_info) {
+		libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
+		                          "containerd (%s): Performing lookup on %d",
+		                          container_id.c_str(),
+		                          m_engine_index);
+
+		// Getting limits
+		libsinsp::cgroup_limits::cgroup_limits_key key(container.m_id,
+		                                               tinfo->get_cgroup("cpu"),
+		                                               tinfo->get_cgroup("memory"),
+		                                               tinfo->get_cgroup("cpuset"));
+
+		libsinsp::cgroup_limits::cgroup_limits_value limits;
+		libsinsp::cgroup_limits::get_cgroup_resource_limits(key, limits);
+
+		container.m_memory_limit = limits.m_memory_limit;
+		container.m_cpu_shares = limits.m_cpu_shares;
+		container.m_cpu_quota = limits.m_cpu_quota;
+		container.m_cpu_period = limits.m_cpu_period;
+		container.m_cpuset_cpu_count = limits.m_cpuset_cpu_count;
+
+		cache->set_lookup_status(request.container_id,
+		                         request.container_type,
+		                         sinsp_container_lookup::state::STARTED,
+		                         m_engine_index);
+		parse_containerd(request, cache);
+
+	} else {
+		cache->notify_new_container(container, tinfo);
+	}
+	// note: with more than one container runtime we cannot be sure if a resolution is enough
+	// and we have to query all the runtimes.
+	return false;
 }

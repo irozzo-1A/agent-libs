@@ -26,6 +26,16 @@
 /* Maximum number of `iovec` structures that we can analyze. */
 #define MAX_IOVCNT 32
 
+/* Maximum number of supported sendmmsg/recvmmsg messages
+ *
+ * The limit was set to 1 because we experienced some performance issues due to
+ * the overhead of the instrumentation on workloads that rely heavily on
+ * sendmmsg/recvmmsg e.g. containerd, cri-o.
+ * We can increase this number in the future after proper
+ * validation/optimization.
+ */
+#define MAX_SENDMMSG_RECVMMSG_SIZE 1
+
 /* Maximum number of `pollfd` structures that we can analyze. */
 #define MAX_POLLFD 16
 

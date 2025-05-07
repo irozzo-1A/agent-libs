@@ -41,6 +41,14 @@ or GPL2.txt for full copies of the license.
  */
 #define PPM_MAX_EVENT_PARAMS (1 << 5) /* Max number of parameters an event can have */
 #define PPM_MAX_NAME_LEN 32
+/*
+ * The limit was set to 1 because we experienced some performance issues due to
+ * the overhead of the instrumentation on workloads that rely heavily on
+ * sendmmsg/recvmmsg e.g. containerd, cri-o.
+ * We can increase this number in the future after proper
+ * validation/optimization.
+ */
+#define PPM_MAX_SENDMMSG_RECVMMSG_SIZE 1
 
 /*
  * Socket families

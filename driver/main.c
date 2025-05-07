@@ -2035,7 +2035,11 @@ static int record_event_consumer(struct ppm_consumer_t *consumer,
 		if(event_datap->category == PPMC_SYSCALL &&
 		   (event_type == PPME_SOCKET_SENDMMSG_X || event_type == PPME_SOCKET_RECVMMSG_X)) {
 			// Communicate the number of total messages to the caller
-			event_datap->event_info.syscall_data.mmsg.count = args.mmsg.count;
+			// maximum number of messages is PPM_MAX_SENDMMSG_RECVMMSG_SIZE
+			event_datap->event_info.syscall_data.mmsg.count =
+			        args.mmsg.count > PPM_MAX_SENDMMSG_RECVMMSG_SIZE
+			                ? PPM_MAX_SENDMMSG_RECVMMSG_SIZE
+			                : args.mmsg.count;
 		}
 	}
 
@@ -2358,7 +2362,7 @@ TRACEPOINT_PROBE(syscall_exit_probe, struct pt_regs *regs, long ret) {
 		//
 		// If the syscall failed, the count value will be negative, so we
 		// immediately exit after sending a failure event.
-		event_data.event_info.syscall_data.mmsg.count = 1024;
+		event_data.event_info.syscall_data.mmsg.count = PPM_MAX_SENDMMSG_RECVMMSG_SIZE;
 
 		for(i = 0; i < event_data.event_info.syscall_data.mmsg.count; i++) {
 			event_data.event_info.syscall_data.mmsg.index = i;

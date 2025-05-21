@@ -54,6 +54,8 @@ int get_cpu_usage_percent();
 void raw_dump(sinsp&, sinsp_evt* ev);
 void formatted_dump(sinsp&, sinsp_evt* ev);
 
+#define BUFFERS_NUM_OPTION "--buffers_num"
+
 libsinsp::events::set<ppm_sc_code> extract_filter_sc_codes(sinsp& inspector);
 std::function<void(sinsp&, sinsp_evt*)> dump = formatted_dump;
 static bool g_interrupted = false;
@@ -71,7 +73,7 @@ static string file_path = "";
 static string bpf_path = "";
 static string gvisor_config_path = "/etc/docker/runsc_falco_config.json";
 static unsigned long buffer_bytes_dim = DEFAULT_DRIVER_BUFFER_BYTES_DIM;
-static uint16_t cpus_for_each_buffer = DEFAULT_CPU_FOR_EACH_BUFFER;
+static double buffers_num = DEFAULT_BUFFERS_NUM;
 static bool all_cpus = false;
 static uint64_t max_events = UINT64_MAX;
 static std::shared_ptr<sinsp_plugin> plugin;
@@ -329,7 +331,11 @@ Options:
   -s <path>, --scap_file <path>              Scap file
   -p <path>, --plugin <path>                 Plugin. Path can follow the pattern "filepath.so|init_cfg|open_params". Must come after the "-s" option when reading events from a file.
   -d <dim>, --buffer_dim <dim>               Dimension in bytes that every buffer will have.
-  -c <num>, --cpus-for-each-buffer <num>     (modern eBPF probe only) Allocate a ring buffer every <num> CPU(s) (default: 1).
+  -c <num>, --buffers-num <num>				 (modern eBPF probe only) Determines the number of allocated ring buffers. The behaviour depends on its value:
+                                             - if `<num> > 1`, it is the number of requested ring buffers;
+			                                 - if `<num> > 0 && <num> <= 1`, a ring buffer is allocated for every `1 / <num>`;
+			                                 - if `<num> == 0`, it means that 1 ring buffer is shared among all available CPUs.
+	                                         (default: 1).
   -A, --all-cpus                             (modern eBPF probe only) Allocate ring buffers for all available CPUs (default: allocate ring buffers for online CPU(s) only).
   -o <fields>, --output-fields <fields>      Output fields string (see <filter> for supported display fields) that overwrites default output fields for all events. * at the beginning prints JSON keys with null values, else no null fields are printed.
   -E, --exclude-users                        Don't create the user/group tables
@@ -357,31 +363,30 @@ static void select_engine(const char* select) {
 #ifndef _WIN32
 // Parse CLI options.
 void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
-	static struct option long_options[] = {
-	        {"help", no_argument, nullptr, 'h'},
-	        {"filter", required_argument, nullptr, 'f'},
-	        {"json", no_argument, nullptr, 'j'},
-	        {"all-threads", no_argument, nullptr, 'a'},
-	        {"bpf", required_argument, nullptr, 'b'},
-	        {"modern_bpf", no_argument, nullptr, 'm'},
-	        {"kmod", no_argument, nullptr, 'k'},
-	        {"scap_file", required_argument, nullptr, 's'},
-	        {"plugin", required_argument, nullptr, 'p'},
-	        {"buffer_dim", required_argument, nullptr, 'd'},
-	        {"cpus-for-each-buffer", required_argument, nullptr, 'c'},
-	        {"all-cpus", no_argument, nullptr, 'A'},
-	        {"output-fields", required_argument, nullptr, 'o'},
-	        {"exclude-users", no_argument, nullptr, 'E'},
-	        {"num-events", required_argument, nullptr, 'n'},
-	        {"ppm-sc-modifies-state", no_argument, nullptr, 'z'},
-	        {"ppm-sc-repair-state", no_argument, nullptr, 'x'},
-	        {"remove-io-sc-state", no_argument, nullptr, 'q'},
-	        {"enable-glogger", no_argument, nullptr, 'g'},
-	        {"raw", no_argument, nullptr, 'r'},
-	        {"gvisor", optional_argument, nullptr, 'G'},
-	        {"perftest", no_argument, nullptr, 't'},
-	        {"tables", optional_argument, nullptr, 'T'},
-	        {nullptr, 0, nullptr, 0}};
+	static struct option long_options[] = {{"help", no_argument, nullptr, 'h'},
+	                                       {"filter", required_argument, nullptr, 'f'},
+	                                       {"json", no_argument, nullptr, 'j'},
+	                                       {"all-threads", no_argument, nullptr, 'a'},
+	                                       {"bpf", required_argument, nullptr, 'b'},
+	                                       {"modern_bpf", no_argument, nullptr, 'm'},
+	                                       {"kmod", no_argument, nullptr, 'k'},
+	                                       {"scap_file", required_argument, nullptr, 's'},
+	                                       {"plugin", required_argument, nullptr, 'p'},
+	                                       {"buffer_dim", required_argument, nullptr, 'd'},
+	                                       {"buffers-num", required_argument, nullptr, 'c'},
+	                                       {"all-cpus", no_argument, nullptr, 'A'},
+	                                       {"output-fields", required_argument, nullptr, 'o'},
+	                                       {"exclude-users", no_argument, nullptr, 'E'},
+	                                       {"num-events", required_argument, nullptr, 'n'},
+	                                       {"ppm-sc-modifies-state", no_argument, nullptr, 'z'},
+	                                       {"ppm-sc-repair-state", no_argument, nullptr, 'x'},
+	                                       {"remove-io-sc-state", no_argument, nullptr, 'q'},
+	                                       {"enable-glogger", no_argument, nullptr, 'g'},
+	                                       {"raw", no_argument, nullptr, 'r'},
+	                                       {"gvisor", optional_argument, nullptr, 'G'},
+	                                       {"perftest", no_argument, nullptr, 't'},
+	                                       {"tables", optional_argument, nullptr, 'T'},
+	                                       {nullptr, 0, nullptr, 0}};
 
 	bool format_set = false;
 	int op;
@@ -465,15 +470,35 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 			buffer_bytes_dim = strtoul(optarg, nullptr, 10);
 			break;
 		case 'c': {
-			const auto value = strtoul(optarg, nullptr, 10);
-			if(value > UINT16_MAX) {
-				std::cerr << "The number of CPUs for each ring buffer cannot be greater than "
-				          << UINT16_MAX << std::endl;
+			char* err_ptr;
+			const auto bufs_num = strtod(optarg, &err_ptr);
+			if(*err_ptr != '\0' || bufs_num < 0) {
+				std::cerr << "Invalid " << BUFFERS_NUM_OPTION
+				          << " option value. Must be greater than or equal to 0" << std::endl;
 				exit(EXIT_FAILURE);
 			}
-			cpus_for_each_buffer = static_cast<uint16_t>(value);
-			break;
+
+			if(bufs_num > 0 && bufs_num <= 1) {
+				if(const auto cpus_for_each_buffer = static_cast<double>(1) / bufs_num;
+				   cpus_for_each_buffer !=
+				   static_cast<double>(static_cast<uint16_t>(cpus_for_each_buffer))) {
+					std::cerr << "Invalid " << BUFFERS_NUM_OPTION
+					          << " option value. 1 / <num> must be a positive integer" << std::endl;
+					exit(EXIT_FAILURE);
+				}
+			} else if(bufs_num !=
+			          static_cast<double>(static_cast<uint16_t>(bufs_num))) {  // bufs_num > 1
+				std::cerr << "Invalid " << BUFFERS_NUM_OPTION
+				          << " option value. If the value specified is above 1, it must be a "
+				             "positive integer"
+				          << std::endl;
+				exit(EXIT_FAILURE);
+			}
+
+			buffers_num = bufs_num;
 		}
+
+		break;
 		case 'A':
 			all_cpus = true;
 			break;
@@ -601,7 +626,7 @@ void open_engine(sinsp& inspector, libsinsp::events::set<ppm_sc_code> events_sc_
 #endif
 #ifdef HAS_ENGINE_MODERN_BPF
 	else if(!engine_string.compare(MODERN_BPF_ENGINE)) {
-		inspector.open_modern_bpf(buffer_bytes_dim, cpus_for_each_buffer, !all_cpus, ppm_sc);
+		inspector.open_modern_bpf(buffer_bytes_dim, buffers_num, !all_cpus, ppm_sc);
 	}
 #endif
 #ifdef HAS_ENGINE_SOURCE_PLUGIN

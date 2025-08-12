@@ -13,6 +13,9 @@
 # the License.
 #
 
+# ThreadSanitizer option
+option(ENABLE_TSAN "Enable ThreadSanitizer for debugging thread safety issues" OFF)
+
 include(jsoncpp)
 
 set(sources util.cpp test.cpp)
@@ -24,6 +27,18 @@ endif()
 add_executable(sinsp-example ${sources})
 
 target_link_libraries(sinsp-example sinsp "${JSONCPP_LIB}")
+
+# ThreadSanitizer configuration
+if(ENABLE_TSAN)
+	if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+		target_compile_options(sinsp-example PRIVATE -fsanitize=thread)
+		target_link_options(sinsp-example PRIVATE -fsanitize=thread)
+
+		message(STATUS "ThreadSanitizer enabled for sinsp-example")
+	else()
+		message(WARNING "ThreadSanitizer is only supported with GCC and Clang compilers")
+	endif()
+endif()
 
 if(EMSCRIPTEN)
 	target_compile_options(sinsp-example PRIVATE "-sDISABLE_EXCEPTION_CATCHING=0")

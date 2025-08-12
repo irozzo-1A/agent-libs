@@ -205,16 +205,18 @@ void sinsp_threadinfo::fix_sockets_coming_from_proc(const std::set<uint16_t>& ip
 
 sinsp_fdinfo* sinsp_threadinfo::add_fd_from_scap(const scap_fdinfo& fdi,
                                                  const bool resolve_hostname_and_port) {
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
+
 	auto newfdi = m_params->fdinfo_factory.create();
 
-	newfdi->m_type = fdi.type;
-	newfdi->m_openflags = 0;
-	newfdi->m_type = fdi.type;
-	newfdi->m_flags = sinsp_fdinfo::FLAGS_FROM_PROC;
-	newfdi->m_ino = fdi.ino;
-	newfdi->m_fd = fdi.fd;
+	newfdi->set_type(fdi.type);
+	newfdi->set_openflags(0);
+	newfdi->set_type(fdi.type);
+	newfdi->set_flags(sinsp_fdinfo::FLAGS_FROM_PROC);
+	newfdi->set_ino(fdi.ino);
+	newfdi->set_fd(fdi.fd);
 
-	switch(newfdi->m_type) {
+	switch(newfdi->get_type()) {
 	case SCAP_FD_IPV4_SOCK:
 		newfdi->m_sockinfo.m_ipv4info.m_fields.m_sip = fdi.info.ipv4info.sip;
 		newfdi->m_sockinfo.m_ipv4info.m_fields.m_dip = fdi.info.ipv4info.dip;
@@ -222,18 +224,18 @@ sinsp_fdinfo* sinsp_threadinfo::add_fd_from_scap(const scap_fdinfo& fdi,
 		newfdi->m_sockinfo.m_ipv4info.m_fields.m_dport = fdi.info.ipv4info.dport;
 		newfdi->m_sockinfo.m_ipv4info.m_fields.m_l4proto = fdi.info.ipv4info.l4proto;
 		if(fdi.info.ipv4info.l4proto == SCAP_L4_TCP) {
-			newfdi->m_flags |= sinsp_fdinfo::FLAGS_SOCKET_CONNECTED;
+			newfdi->add_flags(sinsp_fdinfo::FLAGS_SOCKET_CONNECTED);
 		}
 		m_params->network_interfaces.update_fd(*newfdi);
-		newfdi->m_name =
-		        ipv4tuple_to_string(newfdi->m_sockinfo.m_ipv4info, resolve_hostname_and_port);
+		newfdi->set_name(
+		        ipv4tuple_to_string(newfdi->m_sockinfo.m_ipv4info, resolve_hostname_and_port));
 		break;
 	case SCAP_FD_IPV4_SERVSOCK:
 		newfdi->m_sockinfo.m_ipv4serverinfo.m_ip = fdi.info.ipv4serverinfo.ip;
 		newfdi->m_sockinfo.m_ipv4serverinfo.m_port = fdi.info.ipv4serverinfo.port;
 		newfdi->m_sockinfo.m_ipv4serverinfo.m_l4proto = fdi.info.ipv4serverinfo.l4proto;
-		newfdi->m_name = ipv4serveraddr_to_string(newfdi->m_sockinfo.m_ipv4serverinfo,
-		                                          resolve_hostname_and_port);
+		newfdi->set_name(ipv4serveraddr_to_string(newfdi->m_sockinfo.m_ipv4serverinfo,
+		                                          resolve_hostname_and_port));
 		break;
 	case SCAP_FD_IPV6_SOCK:
 		if(sinsp_utils::is_ipv4_mapped_ipv6((uint8_t*)&fdi.info.ipv6info.sip) &&
@@ -274,24 +276,24 @@ sinsp_fdinfo* sinsp_threadinfo::add_fd_from_scap(const scap_fdinfo& fdi,
 		copy_ipv6_address(newfdi->m_sockinfo.m_ipv6serverinfo.m_ip.m_b, fdi.info.ipv6serverinfo.ip);
 		newfdi->m_sockinfo.m_ipv6serverinfo.m_port = fdi.info.ipv6serverinfo.port;
 		newfdi->m_sockinfo.m_ipv6serverinfo.m_l4proto = fdi.info.ipv6serverinfo.l4proto;
-		newfdi->m_name = ipv6serveraddr_to_string(newfdi->m_sockinfo.m_ipv6serverinfo,
-		                                          resolve_hostname_and_port);
+		newfdi->set_name(ipv6serveraddr_to_string(newfdi->m_sockinfo.m_ipv6serverinfo,
+		                                          resolve_hostname_and_port));
 		break;
 	case SCAP_FD_UNIX_SOCK:
 		newfdi->m_sockinfo.m_unixinfo.m_fields.m_source = fdi.info.unix_socket_info.source;
 		newfdi->m_sockinfo.m_unixinfo.m_fields.m_dest = fdi.info.unix_socket_info.destination;
-		newfdi->m_name = fdi.info.unix_socket_info.fname;
-		if(newfdi->m_name.empty()) {
+		newfdi->set_name(fdi.info.unix_socket_info.fname);
+		if(newfdi->get_name().empty()) {
 			newfdi->set_role_client();
 		} else {
 			newfdi->set_role_server();
 		}
 		break;
 	case SCAP_FD_FILE_V2:
-		newfdi->m_openflags = fdi.info.regularinfo.open_flags;
-		newfdi->m_name = fdi.info.regularinfo.fname;
-		newfdi->m_dev = fdi.info.regularinfo.dev;
-		newfdi->m_mount_id = fdi.info.regularinfo.mount_id;
+		newfdi->set_openflags(fdi.info.regularinfo.open_flags);
+		newfdi->set_name(fdi.info.regularinfo.fname);
+		newfdi->set_dev(fdi.info.regularinfo.dev);
+		newfdi->set_mount_id(fdi.info.regularinfo.mount_id);
 		break;
 	case SCAP_FD_FIFO:
 	case SCAP_FD_FILE:
@@ -308,7 +310,7 @@ sinsp_fdinfo* sinsp_threadinfo::add_fd_from_scap(const scap_fdinfo& fdi,
 	case SCAP_FD_IOURING:
 	case SCAP_FD_MEMFD:
 	case SCAP_FD_PIDFD:
-		newfdi->m_name = fdi.info.fname;
+		newfdi->set_name(fdi.info.fname);
 		break;
 	default:
 		ASSERT(false);
@@ -713,7 +715,9 @@ sinsp_threadinfo* sinsp_threadinfo::get_ancestor_process(uint32_t n) {
 }
 
 sinsp_fdinfo* sinsp_threadinfo::add_fd(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
-	sinsp_fdtable* fd_table_ptr = get_fd_table();
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
+
+	sinsp_fdtable* fd_table_ptr = get_fd_table_unlocked();
 	if(fd_table_ptr == NULL) {
 		return NULL;
 	}
@@ -728,7 +732,9 @@ sinsp_fdinfo* sinsp_threadinfo::add_fd(int64_t fd, std::shared_ptr<sinsp_fdinfo>
 }
 
 void sinsp_threadinfo::remove_fd(int64_t fd) {
-	sinsp_fdtable* fd_table_ptr = get_fd_table();
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
+
+	sinsp_fdtable* fd_table_ptr = get_fd_table_unlocked();
 	if(fd_table_ptr == NULL) {
 		return;
 	}
@@ -736,7 +742,9 @@ void sinsp_threadinfo::remove_fd(int64_t fd) {
 }
 
 bool sinsp_threadinfo::loop_fds(sinsp_fdtable::fdtable_const_visitor_t visitor) {
-	sinsp_fdtable* fdt = get_fd_table();
+	std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+	sinsp_fdtable* fdt = get_fd_table_unlocked();
 	if(fdt == NULL) {
 		return false;
 	}
@@ -745,21 +753,23 @@ bool sinsp_threadinfo::loop_fds(sinsp_fdtable::fdtable_const_visitor_t visitor) 
 }
 
 bool sinsp_threadinfo::is_bound_to_port(uint16_t number) const {
-	const sinsp_fdtable* fdt = get_fd_table();
+	std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+	const sinsp_fdtable* fdt = get_fd_table_unlocked();
 	if(fdt == NULL) {
 		return false;
 	}
 
 	bool ret = false;
 	fdt->const_loop([&](int64_t fd, const sinsp_fdinfo& fdi) {
-		if(fdi.m_type == SCAP_FD_IPV4_SOCK) {
-			if(fdi.m_sockinfo.m_ipv4info.m_fields.m_dport == number) {
+		if(fdi.get_type() == SCAP_FD_IPV4_SOCK) {
+			if(fdi.get_sockinfo().m_ipv4info.m_fields.m_dport == number) {
 				// set result and break out of the loop
 				ret = true;
 				return false;
 			}
-		} else if(fdi.m_type == SCAP_FD_IPV4_SERVSOCK) {
-			if(fdi.m_sockinfo.m_ipv4serverinfo.m_port == number) {
+		} else if(fdi.get_type() == SCAP_FD_IPV4_SERVSOCK) {
+			if(fdi.get_sockinfo().m_ipv4serverinfo.m_port == number) {
 				// set result and break out of the loop
 				ret = true;
 				return false;
@@ -772,15 +782,17 @@ bool sinsp_threadinfo::is_bound_to_port(uint16_t number) const {
 }
 
 bool sinsp_threadinfo::uses_client_port(uint16_t number) const {
-	const sinsp_fdtable* fdt = get_fd_table();
+	std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+	const sinsp_fdtable* fdt = get_fd_table_unlocked();
 	if(fdt == NULL) {
 		return false;
 	}
 
 	bool ret = false;
 	fdt->const_loop([&](int64_t fd, const sinsp_fdinfo& fdi) {
-		if(fdi.m_type == SCAP_FD_IPV4_SOCK) {
-			if(fdi.m_sockinfo.m_ipv4info.m_fields.m_sport == number) {
+		if(fdi.get_type() == SCAP_FD_IPV4_SOCK) {
+			if(fdi.get_sockinfo().m_ipv4info.m_fields.m_sport == number) {
 				// set result and break out of the loop
 				ret = true;
 				return false;
@@ -858,9 +870,9 @@ sinsp_threadinfo* sinsp_threadinfo::get_oldest_matching_ancestor(
 		return nullptr;
 	}
 
-	// If we are using a non virtual id or if the id is virtual but we are in the init namespace we
-	// can access the thread table directly!
-	// if is_virtual_id == false we don't care about the namespace in which we are
+	// If we are using a non virtual id or if the id is virtual but we are in the init namespace
+	// we can access the thread table directly! if is_virtual_id == false we don't care about
+	// the namespace in which we are
 	sinsp_threadinfo* leader = nullptr;
 	if(!is_virtual_id || !is_in_pid_namespace()) {
 		leader = m_params->thread_manager->get_thread_ref(id).get();
@@ -910,19 +922,19 @@ double sinsp_threadinfo::get_fd_usage_pct_d() {
 }
 
 uint64_t sinsp_threadinfo::get_fd_opencount() const {
-	auto main_thread = get_main_thread();
-	if(main_thread == nullptr) {
+	std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+	const sinsp_fdtable* fdt = get_fd_table_unlocked();
+	if(fdt == NULL) {
 		return 0;
 	}
-	return main_thread->get_fdtable().size();
+
+	return fdt->size();
 }
 
 uint64_t sinsp_threadinfo::get_fd_limit() {
-	auto main_thread = get_main_thread();
-	if(main_thread == nullptr) {
-		return 0;
-	}
-	return main_thread->m_fdlimit;
+	std::shared_lock<std::shared_mutex> lock(m_mutex);
+	return m_fdlimit;
 }
 
 const std::string& sinsp_threadinfo::get_cgroup(const std::string& subsys) const {

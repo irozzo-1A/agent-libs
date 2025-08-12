@@ -25,6 +25,8 @@ limitations under the License.
 
 #include <unordered_map>
 #include <memory>
+#include <shared_mutex>
+#include <mutex>
 
 // fd type characters
 #define CHAR_FD_FILE 'f'
@@ -103,17 +105,32 @@ public:
 
 	sinsp_fdinfo(const std::shared_ptr<libsinsp::state::dynamic_struct::field_infos>& dyn_fields =
 	                     nullptr);
-	sinsp_fdinfo(sinsp_fdinfo&& o) = default;
-	sinsp_fdinfo& operator=(sinsp_fdinfo&& o) = default;
-	sinsp_fdinfo(const sinsp_fdinfo& o) = default;
-	sinsp_fdinfo& operator=(const sinsp_fdinfo& o) = default;
+	sinsp_fdinfo(sinsp_fdinfo&& o) = delete;
+	sinsp_fdinfo& operator=(sinsp_fdinfo&& o) = delete;
+	sinsp_fdinfo(const sinsp_fdinfo& o) = delete;
+	sinsp_fdinfo& operator=(const sinsp_fdinfo& o) = delete;
 
 	virtual ~sinsp_fdinfo() = default;
 
 	libsinsp::state::static_struct::field_infos static_fields() const override;
 
 	virtual std::unique_ptr<sinsp_fdinfo> clone() const {
-		return std::make_unique<sinsp_fdinfo>(*this);
+		// Create a new instance and manually copy the data (excluding the mutex)
+		auto new_fdinfo = std::make_unique<sinsp_fdinfo>(dynamic_fields());
+		{
+			std::shared_lock<std::shared_mutex> lock(m_mutex);
+			new_fdinfo->m_type = m_type;
+			new_fdinfo->m_name = m_name;
+			new_fdinfo->m_name_raw = m_name_raw;
+			new_fdinfo->m_oldname = m_oldname;
+			new_fdinfo->m_flags = m_flags;
+			new_fdinfo->m_dev = m_dev;
+			new_fdinfo->m_mount_id = m_mount_id;
+			new_fdinfo->m_ino = m_ino;
+			new_fdinfo->m_openflags = m_openflags;
+			new_fdinfo->m_sockinfo = m_sockinfo;
+		}
+		return new_fdinfo;
 	}
 
 	/*!
@@ -132,9 +149,217 @@ public:
 	const char* get_typestring() const;
 
 	/*!
-	  \brief Return the fd name, after removing unprintable or invalid characters from it.
+	   \brief Return the fd name, after removing unprintable or invalid characters from it.
 	*/
 	std::string tostring_clean() const;
+
+	/*!
+	  \brief Return the name of this FD.
+	*/
+	inline std::string get_name() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_name;
+	}
+
+	/*!
+	  \brief Set the name of this FD.
+	*/
+	inline void set_name(const std::string& name) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_name = name;
+	}
+
+	/*!
+	  \brief Return the raw name of this FD.
+	*/
+	inline std::string get_name_raw() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_name_raw;
+	}
+
+	/*!
+	  \brief Set the raw name of this FD.
+	*/
+	inline void set_name_raw(const std::string& name_raw) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_name_raw = name_raw;
+	}
+
+	/*!
+	  \brief Return the old name of this FD.
+	*/
+	inline std::string get_oldname() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_oldname;
+	}
+
+	/*!
+	  \brief Set the old name of this FD.
+	*/
+	inline void set_oldname(const std::string& oldname) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_oldname = oldname;
+	}
+
+	/*!
+	  \brief Return the flags of this FD.
+	*/
+	inline uint32_t get_flags() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_flags;
+	}
+
+	/*!
+	  \brief Set the flags of this FD.
+	*/
+	inline void set_flags(uint32_t flags) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags = flags;
+	}
+
+	/*!
+	  \brief Add flags to this FD.
+	*/
+	inline void add_flags(uint32_t flags) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags |= flags;
+	}
+
+	/*!
+	  \brief Remove flags from this FD.
+	*/
+	inline void remove_flags(uint32_t flags) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags &= ~flags;
+	}
+
+	/*!
+	  \brief Return the device ID of this FD.
+	*/
+	inline uint32_t get_dev() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_dev;
+	}
+
+	/*!
+	  \brief Set the device ID of this FD.
+	*/
+	inline void set_dev(uint32_t dev) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_dev = dev;
+	}
+
+	/*!
+	  \brief Return the mount ID of this FD.
+	*/
+	inline uint32_t get_mount_id() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_mount_id;
+	}
+
+	/*!
+	  \brief Set the mount ID of this FD.
+	*/
+	inline void set_mount_id(uint32_t mount_id) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_mount_id = mount_id;
+	}
+
+	/*!
+	  \brief Return the inode of this FD.
+	*/
+	inline uint64_t get_ino() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_ino;
+	}
+
+	/*!
+	  \brief Set the inode of this FD.
+	*/
+	inline void set_ino(uint64_t ino) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_ino = ino;
+	}
+
+	/*!
+	  \brief Return the PID of this FD (for pidfd).
+	*/
+	inline int64_t get_pid() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_pid;
+	}
+
+	/*!
+	  \brief Set the PID of this FD (for pidfd).
+	*/
+	inline void set_pid(int64_t pid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_pid = pid;
+	}
+
+	/*!
+	  \brief Return the FD number.
+	*/
+	inline int64_t get_fd() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_fd;
+	}
+
+	/*!
+	  \brief Set the FD number.
+	*/
+	inline void set_fd(int64_t fd) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_fd = fd;
+	}
+
+	/*!
+	  \brief Return the type of this FD.
+	*/
+	inline scap_fd_type get_type() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_type;
+	}
+
+	/*!
+	  \brief Set the type of this FD.
+	*/
+	inline void set_type(scap_fd_type type) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_type = type;
+	}
+
+	/*!
+	  \brief Return the open flags of this FD.
+	*/
+	inline uint32_t get_openflags() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_openflags;
+	}
+
+	/*!
+	  \brief Set the open flags of this FD.
+	*/
+	inline void set_openflags(uint32_t openflags) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_openflags = openflags;
+	}
+
+	/*!
+	  \brief Return the socket info of this FD.
+	*/
+	inline sinsp_sockinfo get_sockinfo() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_sockinfo;
+	}
+
+	/*!
+	  \brief Set the socket info of this FD.
+	*/
+	inline void set_sockinfo(const sinsp_sockinfo& sockinfo) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_sockinfo = sockinfo;
+	}
 
 	/*!
 	  \brief Return true if this is a log device.
@@ -210,11 +435,8 @@ public:
 	// see new_encode_dev in include/linux/kdev_t.h
 	inline uint32_t get_device_minor() const { return (m_dev & 0xff) | ((m_dev >> 12) & 0xfff00); }
 
-	inline uint64_t get_ino() const { return m_ino; }
-
-	inline int64_t get_pid() const { return m_pid; }
-
 	inline void set_unix_info(const uint8_t* packed_data) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		memcpy(&m_sockinfo.m_unixinfo.m_fields.m_source, packed_data + 1, sizeof(uint64_t));
 		memcpy(&m_sockinfo.m_unixinfo.m_fields.m_dest, packed_data + 9, sizeof(uint64_t));
 	}
@@ -312,25 +534,37 @@ public:
 	}
 
 	inline void set_socket_connected() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		m_flags &= ~(FLAGS_CONNECTION_PENDING | FLAGS_CONNECTION_FAILED);
 		m_flags |= FLAGS_SOCKET_CONNECTED;
 	}
 
 	inline void set_socket_pending() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		m_flags &= ~(FLAGS_SOCKET_CONNECTED | FLAGS_CONNECTION_FAILED);
 		m_flags |= FLAGS_CONNECTION_PENDING;
 	}
 
 	inline void set_socket_failed() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		m_flags &= ~(FLAGS_SOCKET_CONNECTED | FLAGS_CONNECTION_PENDING);
 		m_flags |= FLAGS_CONNECTION_FAILED;
 	}
 
-	inline void set_is_cloned() { m_flags |= FLAGS_IS_CLONED; }
+	inline void set_is_cloned() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags |= FLAGS_IS_CLONED;
+	}
 
-	inline void set_overlay_upper() { m_flags |= FLAGS_OVERLAY_UPPER; }
+	inline void set_overlay_upper() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags |= FLAGS_OVERLAY_UPPER;
+	}
 
-	inline void set_overlay_lower() { m_flags |= FLAGS_OVERLAY_LOWER; }
+	inline void set_overlay_lower() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags |= FLAGS_OVERLAY_LOWER;
+	}
 
 	/*!
 	  \brief A static version of static_fields()
@@ -357,4 +591,7 @@ public:
 	uint64_t m_ino = 0;
 	int64_t m_pid = 0;  // only if fd is a pidfd
 	int64_t m_fd = -1;
+
+private:
+	mutable std::shared_mutex m_mutex;  ///< Protects all member variables for thread safety
 };

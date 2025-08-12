@@ -139,6 +139,7 @@ private:
 	std::shared_ptr<sinsp_fdinfo> m_last_accessed_fdinfo;
 	uint64_t m_tid;
 	std::shared_ptr<sinsp_fdinfo> m_nullptr_ret;  // needed for returning a reference
+	mutable std::shared_mutex m_mutex;
 
 	bool is_syscall_plugin_enabled() const {
 		return m_params->m_sinsp_mode.is_plugin() && m_params->m_input_plugin->id() == 0;

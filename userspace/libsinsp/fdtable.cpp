@@ -33,6 +33,8 @@ sinsp_fdtable::sinsp_fdtable(const std::shared_ptr<ctor_params>& params):
 }
 
 inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::find_ref(int64_t fd) {
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
+
 	//
 	// Try looking up in our simple cache
 	//
@@ -68,6 +70,8 @@ inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::find_ref(int64_t fd) 
 inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::add_ref(
         int64_t fd,
         std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
+
 	if(fdinfo->dynamic_fields() != dynamic_fields()) {
 		throw sinsp_exception("adding entry with incompatible dynamic defs to fd table");
 	}
@@ -114,6 +118,8 @@ inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::add_ref(
 }
 
 bool sinsp_fdtable::erase(int64_t fd) {
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
+
 	auto fdit = m_table.find(fd);
 
 	if(fd == m_last_accessed_fd) {
@@ -142,14 +148,17 @@ bool sinsp_fdtable::erase(int64_t fd) {
 }
 
 void sinsp_fdtable::clear() {
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
 	m_table.clear();
 }
 
 size_t sinsp_fdtable::size() const {
+	std::shared_lock<std::shared_mutex> lock(m_mutex);
 	return m_table.size();
 }
 
 void sinsp_fdtable::reset_cache() {
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
 	m_last_accessed_fd = -1;
 }
 

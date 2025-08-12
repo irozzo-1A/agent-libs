@@ -306,7 +306,8 @@ public:
 			return NULL;
 		}
 
-		sinsp_fdtable* fdt = get_fd_table();
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		sinsp_fdtable* fdt = get_fd_table_unlocked();
 
 		if(fdt) {
 			sinsp_fdinfo* fdinfo = fdt->find(fd);
@@ -314,7 +315,7 @@ public:
 				// Its current name is now its old
 				// name. The name might change as a
 				// result of parsing.
-				fdinfo->m_oldname = fdinfo->m_name;
+				fdinfo->set_oldname(fdinfo->get_name());
 				return fdinfo;
 			}
 		}
@@ -544,16 +545,13 @@ public:
 	 * is specified. Today we always specify `PPM_CL_CLONE_FILES` for all threads.
 	 */
 	inline sinsp_fdtable* get_fd_table() {
-		if(!(m_flags & PPM_CL_CLONE_FILES)) {
-			return &m_fdtable;
-		} else {
-			sinsp_threadinfo* root = get_main_thread();
-			return (root == nullptr) ? nullptr : &(root->get_fdtable());
-		}
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return get_fd_table_unlocked();
 	}
 
 	inline const sinsp_fdtable* get_fd_table() const {
-		return const_cast<sinsp_threadinfo*>(this)->get_fd_table();
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return get_fd_table_unlocked();
 	}
 
 	void init();
@@ -629,7 +627,8 @@ public:
 	        bool is_virtual_id = false);
 
 	inline void update_main_fdtable() {
-		auto fdtable = get_fd_table();
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		auto fdtable = get_fd_table_unlocked();
 		m_main_fdtable =
 		        !fdtable ? nullptr
 		                 : static_cast<const libsinsp::state::base_table*>(fdtable->table_ptr());
@@ -665,6 +664,25 @@ private:
 	                  struct iovec& iov,
 	                  uint32_t& alen,
 	                  std::string& rem) const;
+
+	// Private version for use by methods that already hold the lock
+	inline sinsp_fdtable* get_fd_table_unlocked() {
+		if(!(m_flags & PPM_CL_CLONE_FILES)) {
+			return &m_fdtable;
+		} else {
+			sinsp_threadinfo* root = get_main_thread();
+			return (root == nullptr) ? nullptr : &(root->get_fdtable());
+		}
+	}
+
+	inline const sinsp_fdtable* get_fd_table_unlocked() const {
+		if(!(m_flags & PPM_CL_CLONE_FILES)) {
+			return &m_fdtable;
+		} else {
+			const sinsp_threadinfo* root = get_main_thread();
+			return (root == nullptr) ? nullptr : &(root->get_fdtable());
+		}
+	}
 
 	//
 	// Parameters that can't be accessed directly because they could be in the

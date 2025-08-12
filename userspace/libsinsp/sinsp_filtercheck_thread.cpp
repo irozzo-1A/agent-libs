@@ -1181,7 +1181,8 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 	case TYPE_AARGS: {
 		m_tstr.clear();
 
-		sinsp_threadinfo* mt = tinfo->get_ancestor_process(m_argid);
+		sinsp_threadinfo* mt =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid, m_argid);
 		if(!mt) {
 			return NULL;
 		}
@@ -1215,7 +1216,8 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		if(tinfo->is_main_thread()) {
 			mt = tinfo;
 		} else {
-			mt = tinfo->get_main_thread();
+			// Use thread manager method to eliminate cross-class deadlock risk
+			mt = m_inspector->m_thread_manager->get_main_thread(tinfo->m_tid);
 			if(mt == NULL) {
 				RETURN_EXTRACT_STRING(m_tstr);
 			}
@@ -1227,7 +1229,8 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 			for(int32_t j = 0; j < 20; j++)  // up to 20 levels, but realistically we will exit way
 			                                 // before given the mt nullptr check
 			{
-				mt = mt->get_parent_thread();
+				// Use thread manager method to eliminate cross-class deadlock risk
+				mt = m_inspector->m_thread_manager->get_parent_thread(mt->m_tid);
 
 				if(mt == NULL) {
 					break;
@@ -1242,7 +1245,8 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		} else if(m_argid > 0) {
 			// start parent lineage traversal
 			for(int32_t j = 0; j < m_argid; j++) {
-				mt = mt->get_parent_thread();
+				// Use thread manager method to eliminate cross-class deadlock risk
+				mt = m_inspector->m_thread_manager->get_parent_thread(mt->m_tid);
 
 				if(mt == NULL) {
 					return NULL;
@@ -1319,7 +1323,8 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		}
 	}
 	case TYPE_PPID: {
-		sinsp_threadinfo* mt = tinfo->get_ancestor_process();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* mt = m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid);
 		if(!mt) {
 			return NULL;
 		}
@@ -1330,7 +1335,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_VAR(mt->m_pid);
 	}
 	case TYPE_PNAME: {
-		sinsp_threadinfo* ptinfo = tinfo->get_ancestor_process();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* ptinfo =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid);
 		if(!ptinfo) {
 			return NULL;
 		}
@@ -1339,7 +1346,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_STRING(m_tstr);
 	}
 	case TYPE_PCMDLINE: {
-		sinsp_threadinfo* ptinfo = tinfo->get_ancestor_process();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* ptinfo =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid);
 		if(!ptinfo) {
 			return NULL;
 		}
@@ -1348,7 +1357,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_STRING(m_tstr);
 	}
 	case TYPE_ACMDLINE: {
-		sinsp_threadinfo* mt = tinfo->get_ancestor_process(m_argid);
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* mt =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid, m_argid);
 		if(!mt) {
 			return NULL;
 		}
@@ -1357,7 +1368,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_STRING(m_tstr);
 	}
 	case TYPE_APID: {
-		sinsp_threadinfo* mt = tinfo->get_ancestor_process(m_argid);
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* mt =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid, m_argid);
 		if(!mt) {
 			return NULL;
 		}
@@ -1368,7 +1381,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_VAR(mt->m_pid);
 	}
 	case TYPE_ANAME: {
-		sinsp_threadinfo* mt = tinfo->get_ancestor_process(m_argid);
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* mt =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid, m_argid);
 		if(!mt) {
 			return NULL;
 		}
@@ -1377,7 +1392,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_STRING(m_tstr);
 	}
 	case TYPE_PEXE: {
-		sinsp_threadinfo* ptinfo = tinfo->get_ancestor_process();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* ptinfo =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid);
 		if(!ptinfo) {
 			return NULL;
 		}
@@ -1386,7 +1403,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_STRING(m_tstr);
 	}
 	case TYPE_AEXE: {
-		sinsp_threadinfo* mt = tinfo->get_ancestor_process(m_argid);
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* mt =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid, m_argid);
 		if(!mt) {
 			return NULL;
 		}
@@ -1395,7 +1414,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_STRING(m_tstr);
 	}
 	case TYPE_PEXEPATH: {
-		sinsp_threadinfo* ptinfo = tinfo->get_ancestor_process();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* ptinfo =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid);
 		if(!ptinfo) {
 			return NULL;
 		}
@@ -1404,7 +1425,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		RETURN_EXTRACT_STRING(m_tstr);
 	}
 	case TYPE_AEXEPATH: {
-		sinsp_threadinfo* mt = tinfo->get_ancestor_process(m_argid);
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* mt =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid, m_argid);
 		if(!mt) {
 			return NULL;
 		}
@@ -1419,7 +1442,8 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		if(tinfo->is_main_thread()) {
 			mt = tinfo;
 		} else {
-			mt = tinfo->get_main_thread();
+			// Use thread manager method to eliminate cross-class deadlock risk
+			mt = m_inspector->m_thread_manager->get_main_thread(tinfo->m_tid);
 
 			if(mt == NULL) {
 				return NULL;
@@ -1454,7 +1478,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		}
 	}
 	case TYPE_PPID_DURATION: {
-		sinsp_threadinfo* ptinfo = tinfo->get_ancestor_process();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		sinsp_threadinfo* ptinfo =
+		        m_inspector->m_thread_manager->get_ancestor_process(tinfo->m_tid);
 		if(!ptinfo) {
 			return NULL;
 		}
@@ -1753,7 +1779,8 @@ bool sinsp_filter_check_thread::compare_full_apid(sinsp_evt* evt) {
 	if(tinfo->is_main_thread()) {
 		mt = tinfo;
 	} else {
-		mt = tinfo->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		mt = m_inspector->m_thread_manager->get_main_thread(tinfo->m_tid);
 
 		if(mt == NULL) {
 			return false;
@@ -1796,7 +1823,8 @@ bool sinsp_filter_check_thread::compare_full_aname(sinsp_evt* evt) {
 	if(tinfo->is_main_thread()) {
 		mt = tinfo;
 	} else {
-		mt = tinfo->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		mt = m_inspector->m_thread_manager->get_main_thread(tinfo->m_tid);
 
 		if(mt == NULL) {
 			return false;
@@ -1839,7 +1867,8 @@ bool sinsp_filter_check_thread::compare_full_aexe(sinsp_evt* evt) {
 	if(tinfo->is_main_thread()) {
 		mt = tinfo;
 	} else {
-		mt = tinfo->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		mt = m_inspector->m_thread_manager->get_main_thread(tinfo->m_tid);
 
 		if(mt == NULL) {
 			return false;
@@ -1882,7 +1911,8 @@ bool sinsp_filter_check_thread::compare_full_aexepath(sinsp_evt* evt) {
 	if(tinfo->is_main_thread()) {
 		mt = tinfo;
 	} else {
-		mt = tinfo->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		mt = m_inspector->m_thread_manager->get_main_thread(tinfo->m_tid);
 
 		if(mt == NULL) {
 			return false;
@@ -1925,7 +1955,8 @@ bool sinsp_filter_check_thread::compare_full_acmdline(sinsp_evt* evt) {
 	if(tinfo->is_main_thread()) {
 		mt = tinfo;
 	} else {
-		mt = tinfo->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		mt = m_inspector->m_thread_manager->get_main_thread(tinfo->m_tid);
 
 		if(mt == NULL) {
 			return false;
@@ -1970,7 +2001,8 @@ bool sinsp_filter_check_thread::compare_full_aenv(sinsp_evt* evt) {
 	if(tinfo->is_main_thread()) {
 		mt = tinfo;
 	} else {
-		mt = tinfo->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		mt = m_inspector->m_thread_manager->get_main_thread(tinfo->m_tid);
 
 		if(mt == NULL) {
 			return false;

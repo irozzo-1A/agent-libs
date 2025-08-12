@@ -23,6 +23,8 @@ limitations under the License.
 #include <functional>
 #include <memory>
 #include <set>
+#include <mutex>
+#include <shared_mutex>
 
 #include <libscap/scap_savefile_api.h>
 #include <libsinsp/fdtable.h>
@@ -77,6 +79,7 @@ public:
 	  \param accessors A list of {field_name, field_accessor} pairs.
 	 */
 	void set_foreign_field_accessors(const std::vector<foreign_field_accessor_entry>& accessors) {
+		std::unique_lock<std::mutex> lock(m_foreign_fields_mutex);
 		m_foreign_fields_accessors = std::map{accessors.cbegin(), accessors.cend()};
 	}
 
@@ -86,6 +89,7 @@ public:
 	  \param tables A list of {table_name, table} pairs.
 	 */
 	void set_foreign_tables(const std::vector<foreign_table_entry>& tables) {
+		std::unique_lock<std::mutex> lock(m_foreign_tables_mutex);
 		m_foreign_tables.clear();
 		for(const auto& [name, table] : tables) {
 			m_foreign_tables.emplace(name, sinsp_table<std::string>(this, table));
@@ -118,6 +122,8 @@ public:
 	                                              bool lookup_only = true,
 	                                              bool main_thread = false);
 
+	void set_max_thread_table_size(uint32_t value);
+
 	//
 	// Note: lookup_only should be used when the query for the thread is made
 	//       not as a consequence of an event for that thread arriving, but
@@ -128,25 +134,42 @@ public:
 
 	void dump_threads_to_file(scap_dumper_t* dumper);
 
-	uint32_t get_thread_count() { return (uint32_t)m_threadtable.size(); }
+	uint32_t get_thread_count() {
+		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+		return (uint32_t)m_threadtable.size();
+	}
 
 	threadinfo_map_t* get_threads() { return &m_threadtable; }
 
 	std::set<uint16_t> m_server_ports;
 
-	void set_max_thread_table_size(uint32_t value);
-
-	int32_t get_m_n_proc_lookups() const { return m_n_proc_lookups; }
-	int32_t get_m_n_main_thread_lookups() const { return m_n_main_thread_lookups; }
-	uint64_t get_m_n_proc_lookups_duration_ns() const { return m_n_proc_lookups_duration_ns; }
+	int32_t get_m_n_proc_lookups() const {
+		std::unique_lock<std::mutex> lock(m_stats_mutex);
+		return m_n_proc_lookups;
+	}
+	int32_t get_m_n_main_thread_lookups() const {
+		std::unique_lock<std::mutex> lock(m_stats_mutex);
+		return m_n_main_thread_lookups;
+	}
+	uint64_t get_m_n_proc_lookups_duration_ns() const {
+		std::unique_lock<std::mutex> lock(m_stats_mutex);
+		return m_n_proc_lookups_duration_ns;
+	}
 	void reset_thread_counters() {
+		std::unique_lock<std::mutex> lock(m_stats_mutex);
 		m_n_proc_lookups = 0;
 		m_n_main_thread_lookups = 0;
 		m_n_proc_lookups_duration_ns = 0;
 	}
 
-	void set_m_max_n_proc_lookups(int32_t val) { m_max_n_proc_lookups = val; }
-	void set_m_max_n_proc_socket_lookups(int32_t val) { m_max_n_proc_socket_lookups = val; }
+	void set_m_max_n_proc_lookups(int32_t val) {
+		std::unique_lock<std::mutex> lock(m_config_mutex);
+		m_max_n_proc_lookups = val;
+	}
+	void set_m_max_n_proc_socket_lookups(int32_t val) {
+		std::unique_lock<std::mutex> lock(m_config_mutex);
+		m_max_n_proc_socket_lookups = val;
+	}
 	/*!
 	 * \brief Set time period for resetting process lookup counters
 	 *
@@ -159,17 +182,27 @@ public:
 	 *
 	 * \see set_m_max_n_proc_lookups
 	 */
-	void set_proc_lookup_period_ms(uint64_t val) { m_proc_lookup_period = val * 1000000LL; }
+	void set_proc_lookup_period_ms(uint64_t val) {
+		std::unique_lock<std::mutex> lock(m_config_mutex);
+		m_proc_lookup_period = val * 1000000LL;
+	}
 
 	// ---- libsinsp::state::table implementation ----
 
-	size_t entries_count() const override { return m_threadtable.size(); }
+	size_t entries_count() const override {
+		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+		return m_threadtable.size();
+	}
 
-	void clear_entries() override { m_threadtable.clear(); }
+	void clear_entries() override {
+		std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
+		m_threadtable.clear();
+	}
 
 	std::unique_ptr<libsinsp::state::table_entry> new_entry() const override;
 
 	bool foreach_entry(std::function<bool(libsinsp::state::table_entry& e)> pred) override {
+		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
 		return m_threadtable.loop([&pred](sinsp_threadinfo& e) { return pred(e); });
 	}
 
@@ -197,15 +230,20 @@ public:
 		// or should we just erase the table entry?
 		// todo(jasondellaluce): should we make m_tid_to_remove a list, in case
 		// we have more than one thread removed in a given event loop iteration?
-		if(m_threadtable.get(key)) {
-			this->remove_thread(key);
-			return true;
+		{
+			std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+			if(m_threadtable.get(key)) {
+				lock.unlock();
+				this->remove_thread(key);
+				return true;
+			}
 		}
 		return false;
 	}
 
 	const libsinsp::state::dynamic_struct::field_accessor<std::string>* get_field_accessor(
 	        const std::string& field) const {
+		std::unique_lock<std::mutex> lock(m_foreign_fields_mutex);
 		if(m_foreign_fields_accessors.count(field) > 0) {
 			return &m_foreign_fields_accessors.at(field);
 		}
@@ -213,6 +251,7 @@ public:
 	}
 
 	inline sinsp_table<std::string>* get_table(std::string table) {
+		std::unique_lock<std::mutex> lock(m_foreign_tables_mutex);
 		if(m_foreign_tables.count(table) > 0) {
 			return &m_foreign_tables.at(table);
 		}
@@ -220,6 +259,7 @@ public:
 	}
 
 	const std::shared_ptr<thread_group_info>& get_thread_group_info(const int64_t pid) const {
+		std::shared_lock<std::shared_mutex> lock(m_thread_groups_mutex);
 		if(const auto tgroup = m_thread_groups.find(pid); tgroup != m_thread_groups.end()) {
 			return tgroup->second;
 		}
@@ -228,6 +268,7 @@ public:
 
 	void set_thread_group_info(const int64_t pid,
 	                           const std::shared_ptr<thread_group_info>& tginfo) {
+		std::unique_lock<std::shared_mutex> lock(m_thread_groups_mutex);
 		// It should be impossible to have a pid conflict. Right now we manage it by replacing the
 		// old entry with the new one.
 		if(const auto [it, inserted] = m_thread_groups.emplace(pid, tginfo); !inserted) {
@@ -239,13 +280,20 @@ public:
 
 	void thread_to_scap(sinsp_threadinfo& tinfo, scap_threadinfo* sctinfo);
 
-	void maybe_log_max_lookup(int64_t tid, bool scan_sockets, uint64_t period);
+	inline uint64_t get_last_flush_time_ns() const {
+		std::unique_lock<std::mutex> lock(m_flush_mutex);
+		return m_last_flush_time_ns;
+	}
 
-	inline uint64_t get_last_flush_time_ns() const { return m_last_flush_time_ns; }
+	inline void set_last_flush_time_ns(uint64_t v) {
+		std::unique_lock<std::mutex> lock(m_flush_mutex);
+		m_last_flush_time_ns = v;
+	}
 
-	inline void set_last_flush_time_ns(uint64_t v) { m_last_flush_time_ns = v; }
-
-	inline uint32_t get_max_thread_table_size() const { return m_max_thread_table_size; }
+	inline uint32_t get_max_thread_table_size() const {
+		std::unique_lock<std::mutex> lock(m_config_mutex);
+		return m_max_thread_table_size;
+	}
 
 	// Tables and fields names.
 	constexpr static auto s_containers_table_name = "containers";
@@ -269,10 +317,19 @@ public:
 	                                      const scap_fdinfo& fdinfo,
 	                                      bool resolve_hostname_and_port);
 
+	// Thread hierarchy operations (eliminates cross-class deadlocks)
+	sinsp_threadinfo* get_parent_thread(int64_t tid);
+	sinsp_threadinfo* get_main_thread(int64_t tid);
+	void assign_children_to_reaper(int64_t tid, int64_t reaper_tid);
+	void remove_child_from_parent(int64_t tid);
+	sinsp_threadinfo* get_ancestor_process(int64_t tid, uint32_t n = 1);
+
 private:
 	inline void clear_thread_pointers(sinsp_threadinfo& threadinfo);
 	void free_dump_fdinfos(std::vector<scap_fdinfo*>* fdinfos_to_free);
 	void remove_main_thread_fdtable(sinsp_threadinfo* main_thread) const;
+
+	void maybe_log_max_lookup(int64_t tid, bool scan_sockets, uint64_t period);
 
 	bool is_syscall_plugin_enabled() const {
 		return m_sinsp_mode.is_plugin() && m_input_plugin->id() == 0;
@@ -337,6 +394,17 @@ private:
 	        m_foreign_fields_accessors;
 	// State tables exposed by plugins
 	std::map<std::string, sinsp_table<std::string>> m_foreign_tables;
+
+	// Thread safety mutexes
+	mutable std::shared_mutex m_threadtable_mutex;  // Protects m_threadtable and related operations
+	mutable std::shared_mutex m_thread_groups_mutex;  // Protects m_thread_groups
+	mutable std::mutex m_cache_mutex;                 // Protects m_last_tid, m_last_tinfo
+	mutable std::mutex m_stats_mutex;                 // Protects statistics counters
+	mutable std::mutex m_config_mutex;                // Protects configuration parameters
+	mutable std::mutex m_flush_mutex;                 // Protects m_last_flush_time_ns
+	mutable std::mutex m_foreign_fields_mutex;        // Protects m_foreign_fields_accessors
+	mutable std::mutex m_foreign_tables_mutex;        // Protects m_foreign_tables
+	mutable std::mutex m_server_ports_mutex;          // Protects m_server_ports
 
 	// Tables and fields names.
 	constexpr static auto s_thread_table_name = "threads";

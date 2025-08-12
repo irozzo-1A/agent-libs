@@ -31,6 +31,8 @@ struct iovec {
 
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <sinsp_fdtable_factory.h>
 #include <libsinsp/fdtable.h>
 #include <libsinsp/thread_group_info.h>
@@ -151,7 +153,10 @@ public:
 	*/
 	std::string get_cwd();
 
-	inline void set_cwd(const std::string& v) { m_cwd = v; }
+	inline void set_cwd(const std::string& v) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_cwd = v;
+	}
 
 	/*!
 	  \brief Return the values of all environment variables for the process
@@ -193,36 +198,24 @@ public:
 	inline bool is_invalid() const { return m_tid < 0 || m_pid < 0 || m_ptid < 0; }
 
 	/*!
-	  \brief Return true if the thread is dead.
+	  \brief Return true if this thread is dead.
 	*/
 	inline bool is_dead() const { return m_flags & PPM_CL_CLOSED; }
 
 	/*!
-	  \brief Mark thread as dead.
+	  \brief Mark this thread as dead.
 	*/
-	inline void set_dead() { m_flags |= PPM_CL_CLOSED; }
+	inline void set_dead() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags |= PPM_CL_CLOSED;
+	}
 
 	/*!
-	  \brief In some corner cases is possible that a dead main thread could
-	  become again alive. For example, when an execve is performed by a secondary
-	  thread and the main thread is already dead
+	  \brief Mark this thread as alive (resurrect it).
 	*/
 	inline void resurrect_thread() {
-		/* If the thread is not dead we do nothing.
-		 * It should never happen
-		 */
-		if(!is_dead()) {
-			return;
-		}
-
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		m_flags &= ~PPM_CL_CLOSED;
-		if(!m_tginfo) {
-			return;
-		}
-		/* we increment again the threadcount since we
-		 * decremented it during the proc_exit event.
-		 */
-		m_tginfo->increment_thread_count();
 	}
 
 	/*!
@@ -250,9 +243,15 @@ public:
 	  \brief returns true if there is a loop detected in the thread parent state.
 	  Needs traverse_parent_state() to have been called first.
 	*/
-	inline bool parent_loop_detected() const { return m_parent_loop_detected; }
+	inline bool parent_loop_detected() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_parent_loop_detected;
+	}
 
-	inline void set_parent_loop_detected(bool v) { m_parent_loop_detected = v; }
+	inline void set_parent_loop_detected(bool v) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_parent_loop_detected = v;
+	}
 
 	/*!
 	  \brief Get the main thread of the process containing this thread.
@@ -382,6 +381,7 @@ public:
 	void assign_children_to_reaper(sinsp_threadinfo* reaper);
 
 	inline void add_child(const std::shared_ptr<sinsp_threadinfo>& child) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		m_children.push_front(child);
 		/* Set current thread as parent */
 		child->m_ptid = m_tid;
@@ -391,6 +391,7 @@ public:
 
 	/* We call it immediately before removing the thread from the thread table. */
 	inline void remove_child_from_parent() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		auto parent = get_parent_thread();
 		if(parent == nullptr) {
 			return;
@@ -406,6 +407,7 @@ public:
 	}
 
 	inline void clean_expired_children() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		auto child = m_children.begin();
 		while(child != m_children.end()) {
 			/* This child is expired */
@@ -573,6 +575,7 @@ public:
 	void set_cgroups(const cgroups_t& cgroups);
 	bool is_lastevent_data_valid() const;
 	inline void set_lastevent_data_validity(bool isvalid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		if(isvalid) {
 			m_lastevent_cpuid = (uint16_t)1;
 		} else {
@@ -584,7 +587,10 @@ public:
 
 	inline uint8_t* get_last_event_data() { return m_lastevent_data; }
 
-	inline void set_last_event_data(uint8_t* v) { m_lastevent_data = v; }
+	inline void set_last_event_data(uint8_t* v) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_lastevent_data = v;
+	}
 
 	inline const sinsp_fdtable& get_fdtable() const { return m_fdtable; }
 
@@ -592,17 +598,26 @@ public:
 
 	inline uint16_t get_lastevent_type() const { return m_lastevent_type; }
 
-	inline void set_lastevent_type(uint16_t v) { m_lastevent_type = v; }
+	inline void set_lastevent_type(uint16_t v) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_lastevent_type = v;
+	}
 
 	inline uint16_t get_lastevent_cpuid() const { return m_lastevent_cpuid; }
 
-	inline void set_lastevent_cpuid(uint16_t v) { m_lastevent_cpuid = v; }
+	inline void set_lastevent_cpuid(uint16_t v) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_lastevent_cpuid = v;
+	}
 
 	inline const sinsp_evt::category& get_lastevent_category() const {
 		return m_lastevent_category;
 	}
 
-	inline sinsp_evt::category& get_lastevent_category() { return m_lastevent_category; }
+	inline sinsp_evt::category& get_lastevent_category() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		return m_lastevent_category;
+	}
 
 	sinsp_threadinfo* get_oldest_matching_ancestor(
 	        const std::function<int64_t(sinsp_threadinfo*)>& get_thread_id,
@@ -664,13 +679,14 @@ private:
 	uint16_t m_lastevent_type;
 	uint16_t m_lastevent_cpuid;
 	sinsp_evt::category m_lastevent_category;
-	bool m_parent_loop_detected;
+	mutable bool m_parent_loop_detected;
 	libsinsp::state::stl_container_table_adapter<decltype(m_args)> m_args_table_adapter;
 	libsinsp::state::stl_container_table_adapter<decltype(m_env)> m_env_table_adapter;
 	libsinsp::state::stl_container_table_adapter<
 	        decltype(m_cgroups),
 	        libsinsp::state::pair_table_entry_adapter<std::string, std::string>>
 	        m_cgroups_table_adapter;
+	mutable std::shared_mutex m_mutex;
 };
 
 /*@}*/
@@ -684,11 +700,13 @@ public:
 	typedef std::shared_ptr<sinsp_threadinfo> ptr_t;
 
 	inline const ptr_t& put(const ptr_t& tinfo) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		m_threads[tinfo->m_tid] = tinfo;
 		return m_threads[tinfo->m_tid];
 	}
 
 	inline sinsp_threadinfo* get(uint64_t tid) {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		auto it = m_threads.find(tid);
 		if(it == m_threads.end()) {
 			return nullptr;
@@ -697,6 +715,7 @@ public:
 	}
 
 	inline const ptr_t& get_ref(uint64_t tid) {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		auto it = m_threads.find(tid);
 		if(it == m_threads.end()) {
 			return m_nullptr_ret;
@@ -704,11 +723,18 @@ public:
 		return it->second;
 	}
 
-	inline void erase(uint64_t tid) { m_threads.erase(tid); }
+	inline void erase(uint64_t tid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_threads.erase(tid);
+	}
 
-	inline void clear() { m_threads.clear(); }
+	inline void clear() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_threads.clear();
+	}
 
 	bool const_loop_shared_pointer(const_shared_ptr_visitor_t callback) {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		for(auto& it : m_threads) {
 			if(!callback(it.second)) {
 				return false;
@@ -718,6 +744,7 @@ public:
 	}
 
 	bool const_loop(const_visitor_t callback) const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		for(const auto& it : m_threads) {
 			if(!callback(*it.second)) {
 				return false;
@@ -727,6 +754,7 @@ public:
 	}
 
 	bool loop(visitor_t callback) {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		for(auto& it : m_threads) {
 			if(!callback(*it.second)) {
 				return false;
@@ -735,9 +763,13 @@ public:
 		return true;
 	}
 
-	inline size_t size() const { return m_threads.size(); }
+	inline size_t size() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_threads.size();
+	}
 
 protected:
 	std::unordered_map<int64_t, ptr_t> m_threads;
-	const ptr_t m_nullptr_ret;  // needed for returning a reference
+	const ptr_t m_nullptr_ret;          // needed for returning a reference
+	mutable std::shared_mutex m_mutex;  // Protects m_threads
 };

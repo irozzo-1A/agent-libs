@@ -82,8 +82,8 @@ TEST_F(sinsp_with_test_input, THRD_TABLE_check_init_process_creation) {
 	        m_inspector.m_thread_manager->get_thread_ref(INIT_TID, false, true).get();
 	ASSERT_TRUE(tinfo);
 	ASSERT_TRUE(tinfo->is_main_thread());
-	ASSERT_EQ(tinfo->get_main_thread(), tinfo);
-	ASSERT_EQ(tinfo->get_parent_thread(), nullptr);
+	ASSERT_EQ(m_inspector.m_thread_manager->get_main_thread(tinfo->m_tid), tinfo);
+	ASSERT_EQ(m_inspector.m_thread_manager->get_parent_thread(tinfo->m_tid), nullptr);
 	ASSERT_EQ(tinfo->m_tid, INIT_TID);
 	ASSERT_EQ(tinfo->m_pid, INIT_PID);
 	ASSERT_EQ(tinfo->m_ptid, INIT_PTID);
@@ -641,10 +641,12 @@ TEST_F(sinsp_with_test_input, THRD_TABLE_proc_apid_ppid) {
 	ASSERT_EQ(p5_t1_info->m_ptid, p4_t2_tid);
 
 	auto p4_t1_info = thread_manager->get_thread_ref(p4_t1_tid, false).get();
-	auto p5_t1_parent_info = p5_t1_info->get_ancestor_process();
+	auto p5_t1_parent_info =
+	        m_inspector.m_thread_manager->get_ancestor_process(p5_t1_info->m_tid, 1);
 	ASSERT_EQ(p4_t1_info->m_pid, p5_t1_parent_info->m_pid);
 
 	auto p3_t1_info = thread_manager->get_thread_ref(p3_t1_tid, false).get();
-	auto p5_t1_gparent_info = p5_t1_info->get_ancestor_process(2);
+	auto p5_t1_gparent_info =
+	        m_inspector.m_thread_manager->get_ancestor_process(p5_t1_info->m_tid, 2);
 	ASSERT_EQ(p3_t1_info->m_pid, p5_t1_gparent_info->m_pid);
 }

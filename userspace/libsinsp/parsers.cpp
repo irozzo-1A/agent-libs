@@ -1318,8 +1318,8 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt &evt, sinsp_parser_verdict &
 	   child_tinfo->m_tid != child_tinfo->m_vtid) {
 		if(const auto pidns_init_start_ts_param = evt.get_param(20);
 		   !pidns_init_start_ts_param->empty()) {
-			child_tinfo->m_pidns_init_start_ts =
-			        pidns_init_start_ts_param->as<uint64_t>() + m_params->m_machine_info->boot_ts_epoch;
+			child_tinfo->m_pidns_init_start_ts = pidns_init_start_ts_param->as<uint64_t>() +
+			                                     m_params->m_machine_info->boot_ts_epoch;
 		}
 	} else {
 		child_tinfo->m_pidns_init_start_ts = m_params->m_machine_info->boot_ts_epoch;
@@ -3021,7 +3021,7 @@ struct ppm_cmsghdr {
 	        ((char *)(cmsg)) + offsetof(ppm_cmsghdr, field), \
 	        sizeof((cmsg)->field)))
 
-#define PPM_CMSG_ALIGN(len) (((len) + sizeof(size_t) - 1) & (size_t)~(sizeof(size_t) - 1))
+#define PPM_CMSG_ALIGN(len) (((len) + sizeof(size_t) - 1) & (size_t) ~(sizeof(size_t) - 1))
 
 #define PPM_CMSG_NXTHDR(msg_control, msg_controllen, cmsg) \
 	ppm_cmsg_nxthdr(msg_control, msg_controllen, cmsg)
@@ -3589,7 +3589,8 @@ void sinsp_parser::parse_getrlimit_setrlimit_exit(sinsp_evt &evt) const {
 	// Extract the current value for the resource.
 	int64_t curval = evt.get_param(1)->as<uint64_t>();
 	if(curval != -1) {
-		auto main_thread = evt.get_tinfo()->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		auto main_thread = m_params->m_thread_manager->get_main_thread(evt.get_tinfo()->m_tid);
 		if(main_thread == nullptr) {
 			return;
 		}
@@ -3651,7 +3652,8 @@ void sinsp_parser::parse_prlimit_exit(sinsp_evt &evt) const {
 		//
 		// update the process fdlimit
 		//
-		auto main_thread = ptinfo->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		auto main_thread = m_params->m_thread_manager->get_main_thread(ptinfo->m_tid);
 		if(main_thread == nullptr) {
 			return;
 		}
@@ -3707,7 +3709,8 @@ void sinsp_parser::parse_context_switch(sinsp_evt &evt) {
 
 	evt.get_tinfo()->m_pfminor = evt.get_param(2)->as<uint64_t>();
 
-	auto main_tinfo = evt.get_tinfo()->get_main_thread();
+	// Use thread manager method to eliminate cross-class deadlock risk
+	auto main_tinfo = m_params->m_thread_manager->get_main_thread(evt.get_tinfo()->m_tid);
 	if(main_tinfo) {
 		main_tinfo->m_vmsize_kb = evt.get_param(3)->as<uint32_t>();
 
@@ -3943,7 +3946,8 @@ void sinsp_parser::parse_getsockopt_exit(sinsp_evt &evt, sinsp_parser_verdict &v
 	optname = evt.get_param(3)->as<int8_t>();
 
 	if(level == PPM_SOCKOPT_LEVEL_SOL_SOCKET && optname == PPM_SOCKOPT_SO_ERROR) {
-		auto main_thread = evt.get_tinfo()->get_main_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		auto main_thread = m_params->m_thread_manager->get_main_thread(evt.get_tinfo()->m_tid);
 		if(main_thread == nullptr) {
 			return;
 		}

@@ -97,7 +97,9 @@ TEST_F(sinsp_with_test_input, THRD_INFO_assign_children_to_reaper) {
 	ASSERT_NE(p3_t1_tinfo, nullptr);
 
 	/* The reaper cannot be the current process */
-	EXPECT_THROW(p3_t1_tinfo->assign_children_to_reaper(p3_t1_tinfo), sinsp_exception);
+	EXPECT_THROW(m_inspector.m_thread_manager->assign_children_to_reaper(p3_t1_tinfo->m_tid,
+	                                                                     p3_t1_tinfo->m_tid),
+	             sinsp_exception);
 
 	/* children of p3_t1 are p4_t1 and p4_t2 we can reparent them to p1_t1 for example */
 	ASSERT_THREAD_CHILDREN(p3_t1_tid, 2, 2, p4_t1_tid, p4_t2_tid);
@@ -105,7 +107,7 @@ TEST_F(sinsp_with_test_input, THRD_INFO_assign_children_to_reaper) {
 
 	auto p1_t1_tinfo = thread_manager->get_thread_ref(p1_t1_tid, false).get();
 	ASSERT_NE(p1_t1_tinfo, nullptr);
-	p3_t1_tinfo->assign_children_to_reaper(p1_t1_tinfo);
+	m_inspector.m_thread_manager->assign_children_to_reaper(p3_t1_tinfo->m_tid, p1_t1_tinfo->m_tid);
 
 	/* all p3_t1 children should be removed */
 	ASSERT_THREAD_CHILDREN(p3_t1_tid, 0, 0);
@@ -118,7 +120,7 @@ TEST_F(sinsp_with_test_input, THRD_INFO_assign_children_to_reaper) {
 
 	/* Another call to the reparenting function should do nothing since p3_t1 has no other children
 	 */
-	p3_t1_tinfo->assign_children_to_reaper(p1_t1_tinfo);
+	m_inspector.m_thread_manager->assign_children_to_reaper(p3_t1_tinfo->m_tid, p1_t1_tinfo->m_tid);
 	ASSERT_THREAD_CHILDREN(p3_t1_tid, 0, 0);
 	ASSERT_THREAD_CHILDREN(p1_t1_tid, 2, 2, p4_t1_tid, p4_t2_tid);
 }

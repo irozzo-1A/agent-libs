@@ -142,11 +142,32 @@ sinsp_thread_manager::sinsp_thread_manager(
 }
 
 void sinsp_thread_manager::clear() {
+	// Lock ordering: THREADTABLE -> THREAD_GROUPS -> CACHE -> STATS -> FLUSH
+	// This order must be consistent across all methods to prevent deadlocks
+
+	// Step 1: Lock thread table (highest priority)
+	std::unique_lock<std::shared_mutex> threadtable_lock(m_threadtable_mutex);
+
+	// Step 2: Lock thread groups
+	std::unique_lock<std::shared_mutex> groups_lock(m_thread_groups_mutex);
+
+	// Step 3: Lock cache
+	std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+
+	// Step 4: Lock stats
+	std::unique_lock<std::mutex> stats_lock(m_stats_mutex);
+
+	// Step 5: Lock flush
+	std::unique_lock<std::mutex> flush_lock(m_flush_mutex);
+
+	// Now perform the clear operations
 	m_threadtable.clear();
 	m_thread_groups.clear();
 	m_last_tid = -1;
 	m_last_tinfo.reset();
 	m_last_flush_time_ns = 0;
+
+	// Locks are automatically released in reverse order when they go out of scope
 }
 
 /* This is called on the table after the `/proc` scan */
@@ -238,21 +259,27 @@ const std::shared_ptr<sinsp_threadinfo>& sinsp_thread_manager::add_thread(
         std::unique_ptr<sinsp_threadinfo> threadinfo,
         bool from_scap_proctable) {
 	/* We have no more space */
-	if(m_threadtable.size() >= m_max_thread_table_size && threadinfo->m_pid != m_sinsp_pid) {
-		if(m_sinsp_stats_v2 != nullptr) {
-			// rate limit messages to avoid spamming the logs
-			if(m_sinsp_stats_v2->m_n_drops_full_threadtable % m_max_thread_table_size == 0) {
-				libsinsp_logger()->format(
-				        sinsp_logger::SEV_INFO,
-				        "Thread table full, dropping tid %lu (pid %lu, comm \"%s\")",
-				        threadinfo->m_tid,
-				        threadinfo->m_pid,
-				        threadinfo->m_comm.c_str());
+	{
+		// Lock ordering: THREADTABLE -> CONFIG (CONFIG is not in our main order, but this is
+		// read-only)
+		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+		std::unique_lock<std::mutex> config_lock(m_config_mutex);
+		if(m_threadtable.size() >= m_max_thread_table_size && threadinfo->m_pid != m_sinsp_pid) {
+			if(m_sinsp_stats_v2 != nullptr) {
+				// rate limit messages to avoid spamming the logs
+				if(m_sinsp_stats_v2->m_n_drops_full_threadtable % m_max_thread_table_size == 0) {
+					libsinsp_logger()->format(
+					        sinsp_logger::SEV_INFO,
+					        "Thread table full, dropping tid %lu (pid %lu, comm \"%s\")",
+					        threadinfo->m_tid,
+					        threadinfo->m_pid,
+					        threadinfo->m_comm.c_str());
+				}
+				m_sinsp_stats_v2->m_n_drops_full_threadtable++;
 			}
-			m_sinsp_stats_v2->m_n_drops_full_threadtable++;
-		}
 
-		return m_nullptr_tinfo_ret;
+			return m_nullptr_tinfo_ret;
+		}
 	}
 
 	auto tinfo_shared_ptr = std::shared_ptr<sinsp_threadinfo>(std::move(threadinfo));
@@ -270,17 +297,29 @@ const std::shared_ptr<sinsp_threadinfo>& sinsp_thread_manager::add_thread(
 		        "adding entry with incompatible dynamic defs to of file descriptor sub-table");
 	}
 
-	if(m_sinsp_stats_v2 != nullptr) {
-		m_sinsp_stats_v2->m_n_added_threads++;
+	// Lock ordering: STATS -> CACHE (consistent with clear() order)
+	{
+		std::unique_lock<std::mutex> stats_lock(m_stats_mutex);
+		if(m_sinsp_stats_v2 != nullptr) {
+			m_sinsp_stats_v2->m_n_added_threads++;
+		}
 	}
 
-	if(m_last_tid == tinfo_shared_ptr->m_tid) {
-		m_last_tid = -1;
-		m_last_tinfo.reset();
+	{
+		std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+		if(m_last_tid == tinfo_shared_ptr->m_tid) {
+			m_last_tid = -1;
+			m_last_tinfo.reset();
+		}
 	}
 
 	tinfo_shared_ptr->update_main_fdtable();
-	return m_threadtable.put(tinfo_shared_ptr);
+
+	// Lock ordering: THREADTABLE (final operation)
+	{
+		std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
+		return m_threadtable.put(tinfo_shared_ptr);
+	}
 }
 
 /* Taken from `find_new_reaper` kernel function:
@@ -322,7 +361,8 @@ sinsp_threadinfo* sinsp_thread_manager::find_new_reaper(sinsp_threadinfo* tinfo)
 	std::unordered_set<int64_t> loop_detection_set{tinfo->m_tid};
 	uint16_t prev_set_size = 1;
 
-	auto parent_tinfo = tinfo->get_parent_thread();
+	// Use thread manager method to eliminate cross-class deadlock risk
+	auto parent_tinfo = get_parent_thread(tinfo->m_tid);
 	while(parent_tinfo != nullptr) {
 		prev_set_size = loop_detection_set.size();
 		loop_detection_set.insert(parent_tinfo->m_tid);
@@ -355,7 +395,8 @@ sinsp_threadinfo* sinsp_thread_manager::find_new_reaper(sinsp_threadinfo* tinfo)
 				}
 			}
 		}
-		parent_tinfo = parent_tinfo->get_parent_thread();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		parent_tinfo = get_parent_thread(parent_tinfo->m_tid);
 	}
 
 	return nullptr;
@@ -395,10 +436,18 @@ void sinsp_thread_manager::remove_main_thread_fdtable(sinsp_threadinfo* main_thr
 }
 
 void sinsp_thread_manager::remove_thread(int64_t tid) {
-	auto thread_to_remove = m_threadtable.get_ref(tid);
+	std::shared_ptr<sinsp_threadinfo> thread_to_remove;
+
+	// Step 1: Lock thread table for read (highest priority)
+	{
+		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+		thread_to_remove = m_threadtable.get_ref(tid);
+	}
 
 	/* This should never happen but just to be sure. */
 	if(thread_to_remove == nullptr) {
+		// Lock stats for write (consistent order: THREADTABLE -> STATS)
+		std::unique_lock<std::mutex> stats_lock(m_stats_mutex);
 		if(m_sinsp_stats_v2 != nullptr) {
 			m_sinsp_stats_v2->m_n_failed_thread_lookups++;
 		}
@@ -410,10 +459,19 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 	 * which don't have a group or children.
 	 */
 	if(thread_to_remove->is_invalid() || thread_to_remove->m_tginfo == nullptr) {
-		thread_to_remove->remove_child_from_parent();
-		m_threadtable.erase(tid);
-		m_last_tid = -1;
-		m_last_tinfo.reset();
+		// Use thread manager method to eliminate cross-class deadlock risk
+		remove_child_from_parent(tid);
+
+		// Lock ordering: THREADTABLE -> CACHE (consistent with clear())
+		{
+			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
+			m_threadtable.erase(tid);
+		}
+		{
+			std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+			m_last_tid = -1;
+			m_last_tinfo.reset();
+		}
 		return;
 	}
 
@@ -423,6 +481,8 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 	if(!thread_to_remove->is_dead()) {
 		/* we should decrement only if the thread is alive */
 		thread_to_remove->m_tginfo->decrement_thread_count();
+		// Release thread manager locks before calling thread info methods to prevent cross-class
+		// deadlock
 		thread_to_remove->set_dead();
 	}
 
@@ -460,6 +520,8 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 			/* Fallback case:
 			 * We search for a reaper in best effort traversing our table
 			 */
+			// Release thread manager locks before calling find_new_reaper to prevent cross-class
+			// deadlock
 			reaper_tinfo = find_new_reaper(thread_to_remove.get());
 		}
 
@@ -481,22 +543,34 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 				reaper_tinfo->m_tginfo->set_reaper(true);
 			}
 		}
-		thread_to_remove->assign_children_to_reaper(reaper_tinfo);
+		// Use thread manager method to eliminate cross-class deadlock risk
+		assign_children_to_reaper(tid, reaper_tinfo ? reaper_tinfo->m_tid : -1);
 	}
 
 	/* [Remove main thread]
 	 * We remove the main thread if there are no other threads in the group
 	 */
 	if((thread_to_remove->m_tginfo->get_thread_count() == 0)) {
-		remove_main_thread_fdtable(thread_to_remove->get_main_thread());
+		// Note: remove_main_thread_fdtable is called without holding thread manager locks to
+		// prevent cross-class deadlock
+		remove_main_thread_fdtable(get_main_thread(thread_to_remove->m_tid));
 
 		/* we remove the main thread and the thread group */
 		/* even if thread_to_remove is not the main thread the parent will be
 		 * the same so it's ok.
 		 */
-		thread_to_remove->remove_child_from_parent();
-		m_thread_groups.erase(thread_to_remove->m_pid);
-		m_threadtable.erase(thread_to_remove->m_pid);
+		// Use thread manager method to eliminate cross-class deadlock risk
+		remove_child_from_parent(tid);
+
+		// Lock ordering: THREADTABLE -> THREAD_GROUPS (consistent with clear() order)
+		{
+			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
+			m_threadtable.erase(thread_to_remove->m_pid);
+		}
+		{
+			std::unique_lock<std::shared_mutex> groups_lock(m_thread_groups_mutex);
+			m_thread_groups.erase(thread_to_remove->m_pid);
+		}
 	}
 
 	/* [Remove the current thread]
@@ -505,17 +579,28 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 	 * in the previous `if`.
 	 */
 	if(!thread_to_remove->is_main_thread()) {
-		thread_to_remove->remove_child_from_parent();
-		m_threadtable.erase(tid);
+		// Use thread manager method to eliminate cross-class deadlock risk
+		remove_child_from_parent(tid);
+		{
+			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
+			m_threadtable.erase(tid);
+		}
 	}
 
 	/* Maybe we removed the thread info that was cached, we clear
 	 * the cache just to be sure.
 	 */
-	m_last_tid = -1;
-	m_last_tinfo.reset();
-	if(m_sinsp_stats_v2 != nullptr) {
-		m_sinsp_stats_v2->m_n_removed_threads++;
+	// Lock ordering: CACHE -> STATS (consistent with clear())
+	{
+		std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+		m_last_tid = -1;
+		m_last_tinfo.reset();
+	}
+	{
+		std::unique_lock<std::mutex> stats_lock(m_stats_mutex);
+		if(m_sinsp_stats_v2 != nullptr) {
+			m_sinsp_stats_v2->m_n_removed_threads++;
+		}
 	}
 }
 
@@ -618,11 +703,17 @@ sinsp_fdinfo* sinsp_thread_manager::add_thread_fd_from_scap(sinsp_threadinfo& ti
 		return newfdinfo;
 	}
 
-	m_server_ports.insert(server_port);
+	{
+		std::unique_lock<std::mutex> lock(m_server_ports_mutex);
+		m_server_ports.insert(server_port);
+	}
 	return newfdinfo;
 }
 
 void sinsp_thread_manager::maybe_log_max_lookup(int64_t tid, bool scan_sockets, uint64_t period) {
+	// Note: This function assumes the caller has already acquired the necessary locks
+	// to safely access m_proc_lookup_period, m_max_n_proc_lookups, m_max_n_proc_socket_lookups,
+	// m_n_proc_lookups, and m_n_proc_lookups_duration_ns
 	if(m_proc_lookup_period) {
 		if(m_n_proc_lookups == m_max_n_proc_lookups) {
 			libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
@@ -798,6 +889,55 @@ void sinsp_thread_manager::dump_threads_to_file(scap_dumper_t* dumper) {
 	});
 }
 
+/* `lookup_only==true` means that we don't fill the `m_last_tinfo` field */
+const threadinfo_map_t::ptr_t& sinsp_thread_manager::find_thread(int64_t tid, bool lookup_only) {
+	//
+	// Try looking up in our simple cache
+	//
+	{
+		std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+		if(m_last_tid >= 0 && tid == m_last_tid && m_last_tinfo) {
+			if(m_sinsp_stats_v2 != nullptr) {
+				m_sinsp_stats_v2->m_n_cached_thread_lookups++;
+			}
+			// This allows us to avoid performing an actual timestamp lookup
+			// for something that may not need to be precise
+			m_last_tinfo->m_lastaccess_ts = m_timestamper.get_cached_ts();
+			m_last_tinfo->update_main_fdtable();
+			return m_last_tinfo;
+		}
+	}
+
+	//
+	// Caching failed, do a real lookup
+	//
+	const threadinfo_map_t::ptr_t* thr = nullptr;
+	{
+		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+		thr = &m_threadtable.get_ref(tid);
+	}
+
+	if(*thr) {
+		if(m_sinsp_stats_v2 != nullptr) {
+			m_sinsp_stats_v2->m_n_noncached_thread_lookups++;
+		}
+		if(!lookup_only) {
+			std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+			m_last_tid = tid;
+			m_last_tinfo = *thr;
+			(*thr)->m_lastaccess_ts = m_timestamper.get_cached_ts();
+		}
+		(*thr)->update_main_fdtable();
+		return *thr;
+	} else {
+		if(m_sinsp_stats_v2 != nullptr) {
+			m_sinsp_stats_v2->m_n_failed_thread_lookups++;
+		}
+
+		return m_nullptr_tinfo_ret;
+	}
+}
+
 const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(
         const int64_t tid,
         const bool query_os_if_not_found,
@@ -805,8 +945,18 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(
         const bool main_thread) {
 	const auto& sinsp_proc = find_thread(tid, lookup_only);
 
-	if(!sinsp_proc && query_os_if_not_found &&
-	   (m_threadtable.size() < m_max_thread_table_size || tid == m_sinsp_pid)) {
+	if(!sinsp_proc && query_os_if_not_found) {
+		// Check table size limit before proceeding
+		{
+			// Lock ordering: THREADTABLE -> CONFIG (CONFIG is not in main order, but this is
+			// read-only)
+			std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+			std::unique_lock<std::mutex> config_lock(m_config_mutex);
+			if(m_threadtable.size() >= m_max_thread_table_size && tid != m_sinsp_pid) {
+				return m_nullptr_tinfo_ret;
+			}
+		}
+
 		// Certain code paths can lead to this point from scap_open() (incomplete example:
 		// scap_proc_scan_proc_dir() -> resolve_container() -> get_env()). Adding a
 		// defensive check here to protect both, callers of get_env and get_thread.
@@ -834,31 +984,43 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(
 		auto newti = m_threadinfo_factory.create();
 
 		if(main_thread) {
+			// Lock ordering: STATS (alone, consistent with other methods)
+			std::unique_lock<std::mutex> stats_lock(m_stats_mutex);
 			m_n_main_thread_lookups++;
 		}
 
-		if(m_max_n_proc_lookups < 0 || m_n_proc_lookups < m_max_n_proc_lookups) {
-			bool scan_sockets = false;
-			if(m_max_n_proc_socket_lookups < 0 || m_n_proc_lookups < m_max_n_proc_socket_lookups) {
-				scan_sockets = true;
-			}
+		{
+			// Lock ordering: CONFIG (alone, consistent with other methods)
+			std::unique_lock<std::mutex> config_lock(m_config_mutex);
+			if(m_max_n_proc_lookups < 0 || m_n_proc_lookups < m_max_n_proc_lookups) {
+				bool scan_sockets = false;
+				if(m_max_n_proc_socket_lookups < 0 ||
+				   m_n_proc_lookups < m_max_n_proc_socket_lookups) {
+					scan_sockets = true;
+				}
 
-			const uint64_t ts_start = sinsp_utils::get_current_time_ns();
-			if(scap_proc_get(m_scap_platform, tid, &scap_proc, scan_sockets) == SCAP_SUCCESS) {
-				have_scap_proc = true;
-			}
-			const uint64_t ts_end = sinsp_utils::get_current_time_ns();
+				const uint64_t ts_start = sinsp_utils::get_current_time_ns();
+				if(scap_proc_get(m_scap_platform, tid, &scap_proc, scan_sockets) == SCAP_SUCCESS) {
+					have_scap_proc = true;
+				}
+				const uint64_t ts_end = sinsp_utils::get_current_time_ns();
 
-			m_n_proc_lookups_duration_ns += (ts_end - ts_start);
-			m_n_proc_lookups++;
+				{
+					// Lock ordering: STATS (alone, consistent with other methods)
+					std::unique_lock<std::mutex> stats_lock(m_stats_mutex);
+					m_n_proc_lookups_duration_ns += (ts_end - ts_start);
+					m_n_proc_lookups++;
+				}
 
-			const uint64_t actual_proc_lookup_period = (ts_end - m_last_proc_lookup_period_start);
+				const uint64_t actual_proc_lookup_period =
+				        (ts_end - m_last_proc_lookup_period_start);
 
-			maybe_log_max_lookup(tid, scan_sockets, actual_proc_lookup_period);
+				maybe_log_max_lookup(tid, scan_sockets, actual_proc_lookup_period);
 
-			if(m_proc_lookup_period && actual_proc_lookup_period >= m_proc_lookup_period) {
-				reset_thread_counters();
-				m_last_proc_lookup_period_start = ts_end;
+				if(m_proc_lookup_period && actual_proc_lookup_period >= m_proc_lookup_period) {
+					reset_thread_counters();
+					m_last_proc_lookup_period_start = ts_end;
+				}
 			}
 		}
 
@@ -893,51 +1055,123 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(
 	return sinsp_proc;
 }
 
-/* `lookup_only==true` means that we don't fill the `m_last_tinfo` field */
-const threadinfo_map_t::ptr_t& sinsp_thread_manager::find_thread(int64_t tid, bool lookup_only) {
-	//
-	// Try looking up in our simple cache
-	//
-	if(m_last_tid >= 0 && tid == m_last_tid && m_last_tinfo) {
-		if(m_sinsp_stats_v2 != nullptr) {
-			m_sinsp_stats_v2->m_n_cached_thread_lookups++;
-		}
-		// This allows us to avoid performing an actual timestamp lookup
-		// for something that may not need to be precise
-		m_last_tinfo->m_lastaccess_ts = m_timestamper.get_cached_ts();
-		m_last_tinfo->update_main_fdtable();
-		return m_last_tinfo;
-	}
-
-	//
-	// Caching failed, do a real lookup
-	//
-	const auto& thr = m_threadtable.get_ref(tid);
-
-	if(thr) {
-		if(m_sinsp_stats_v2 != nullptr) {
-			m_sinsp_stats_v2->m_n_noncached_thread_lookups++;
-		}
-		if(!lookup_only) {
-			m_last_tid = tid;
-			m_last_tinfo = thr;
-			thr->m_lastaccess_ts = m_timestamper.get_cached_ts();
-		}
-		thr->update_main_fdtable();
-		return thr;
-	} else {
-		if(m_sinsp_stats_v2 != nullptr) {
-			m_sinsp_stats_v2->m_n_failed_thread_lookups++;
-		}
-
-		return m_nullptr_tinfo_ret;
-	}
-}
-
 void sinsp_thread_manager::set_max_thread_table_size(uint32_t value) {
+	std::unique_lock<std::mutex> lock(m_config_mutex);
 	m_max_thread_table_size = value;
 }
 
 std::unique_ptr<libsinsp::state::table_entry> sinsp_thread_manager::new_entry() const {
 	return m_threadinfo_factory.create();
+}
+
+// Thread hierarchy operations (eliminates cross-class deadlocks)
+
+sinsp_threadinfo* sinsp_thread_manager::get_parent_thread(int64_t tid) {
+	std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+	auto thread = m_threadtable.get_ref(tid);
+	if(!thread) {
+		return nullptr;
+	}
+	return m_threadtable.get_ref(thread->m_ptid).get();
+}
+
+sinsp_threadinfo* sinsp_thread_manager::get_main_thread(int64_t tid) {
+	std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+	auto thread = m_threadtable.get_ref(tid);
+	if(!thread) {
+		return nullptr;
+	}
+
+	if(thread->is_main_thread()) {
+		return thread.get();
+	}
+
+	if(thread->m_tginfo == nullptr) {
+		return nullptr;
+	}
+
+	auto possible_main = thread->m_tginfo->get_first_thread();
+	if(possible_main == nullptr || !possible_main->is_main_thread()) {
+		return nullptr;
+	}
+	return possible_main;
+}
+
+void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper_tid) {
+	std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
+
+	auto thread = m_threadtable.get_ref(tid);
+	if(!thread || thread->m_children.size() == 0) {
+		return;
+	}
+
+	std::shared_ptr<sinsp_threadinfo> reaper;
+	if(reaper_tid > 0) {
+		reaper = m_threadtable.get_ref(reaper_tid);
+		if(reaper == thread) {
+			throw sinsp_exception(
+			        "the current process is reaper of itself, this should never happen!");
+		}
+	}
+
+	auto child = thread->m_children.begin();
+	while(child != thread->m_children.end()) {
+		if(!child->expired()) {
+			auto child_ptr = child->lock();
+			if(reaper == nullptr) {
+				child_ptr->m_ptid = 0;
+			} else {
+				reaper->m_children.push_front(child_ptr);
+				child_ptr->m_ptid = reaper->m_tid;
+				reaper->m_not_expired_children++;
+			}
+		}
+		child = thread->m_children.erase(child);
+	}
+	thread->m_not_expired_children = 0;
+}
+
+void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
+	std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
+
+	auto thread = m_threadtable.get_ref(tid);
+	if(!thread) {
+		return;
+	}
+
+	auto parent = m_threadtable.get_ref(thread->m_ptid);
+	if(parent == nullptr) {
+		return;
+	}
+
+	parent->m_not_expired_children--;
+	if((parent->m_children.size() - parent->m_not_expired_children) >=
+	   DEFAULT_EXPIRED_CHILDREN_THRESHOLD) {
+		// Clean expired children within the same lock
+		auto child = parent->m_children.begin();
+		while(child != parent->m_children.end()) {
+			if(child->expired()) {
+				child = parent->m_children.erase(child);
+				continue;
+			}
+			child++;
+		}
+	}
+}
+
+sinsp_threadinfo* sinsp_thread_manager::get_ancestor_process(int64_t tid, uint32_t n) {
+	std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+
+	auto mt = get_main_thread(tid);
+	for(uint32_t i = 0; i < n; i++) {
+		if(mt == nullptr) {
+			return nullptr;
+		}
+		mt = get_parent_thread(mt->m_tid);
+		if(mt == nullptr) {
+			return nullptr;
+		}
+		mt = get_main_thread(mt->m_tid);
+	}
+	return mt;
 }

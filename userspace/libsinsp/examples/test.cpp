@@ -23,6 +23,7 @@ limitations under the License.
 #endif  // _WIN32
 #include <csignal>
 #include <libsinsp/sinsp.h>
+#include <libsinsp/sinsp_buffer.h>
 #include <libscap/scap_engines.h>
 #include <functional>
 #include <memory>
@@ -32,6 +33,8 @@ limitations under the License.
 #include <unordered_set>
 #include <memory>
 #include <thread>
+#include <atomic>
+#include <vector>
 #include <json/json.h>
 
 #ifndef _WIN32
@@ -40,6 +43,7 @@ extern "C" {
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>  // for strlen
 }
 #endif  // _WIN32
 
@@ -51,15 +55,16 @@ int get_cpu_usage_percent();
 #endif  // __linux__
 
 // Functions used for dumping to stdout
-void raw_dump(sinsp&, sinsp_evt* ev);
-void formatted_dump(sinsp&, sinsp_evt* ev);
+void raw_dump(sinsp&, sinsp_evt* ev, sinsp_buffer_t buffer_h = SINSP_INVALID_BUFFER_HANDLE);
+void formatted_dump(sinsp&, sinsp_evt* ev, sinsp_buffer_t buffer_h = SINSP_INVALID_BUFFER_HANDLE);
 
 #define BUFFERS_NUM_OPTION "--buffers_num"
 
 libsinsp::events::set<ppm_sc_code> extract_filter_sc_codes(sinsp& inspector);
-std::function<void(sinsp&, sinsp_evt*)> dump = formatted_dump;
+std::function<void(sinsp&, sinsp_evt*, sinsp_buffer_t)> dump = formatted_dump;
 static bool g_interrupted = false;
 static const uint8_t g_backoff_timeout_secs = 2;
+static const uint8_t g_shutdown_timeout_secs = 10;  // Timeout for graceful shutdown
 static bool g_all_threads = false;
 static bool ppm_sc_modifies_state = false;
 static bool ppm_sc_repair_state = false;
@@ -76,12 +81,49 @@ static unsigned long buffer_bytes_dim = DEFAULT_DRIVER_BUFFER_BYTES_DIM;
 static double buffers_num = DEFAULT_BUFFERS_NUM;
 static bool all_cpus = false;
 static uint64_t max_events = UINT64_MAX;
+static uint32_t num_processing_threads = 1;  // Number of threads for parallel event processing
 static std::shared_ptr<sinsp_plugin> plugin;
 static std::string open_params;  // for source plugins, its open params
 static std::unique_ptr<filter_check_list> filter_list;
 static std::shared_ptr<sinsp_filter_factory> filter_factory;
 
-sinsp_evt* get_event(sinsp& inspector, std::function<void(const std::string&)> handle_error);
+sinsp_evt* get_event(sinsp& inspector,
+                     std::function<void(const std::string&)> handle_error,
+                     sinsp_buffer_t buffer_h = SINSP_INVALID_BUFFER_HANDLE);
+
+struct event_processing_stats {
+	uint64_t num_events = 0;
+	uint64_t last_events = 0;
+	uint64_t last_ts_ns = 0;
+	uint64_t cpu_total = 0;
+	uint64_t num_samples = 0;
+	double max_throughput = 0.0;
+};
+
+event_processing_stats process_events_loop(
+        sinsp& inspector,
+        std::function<void(sinsp&, sinsp_evt*, sinsp_buffer_t)> dump_func,
+        bool perftest_mode,
+        bool all_threads,
+        uint64_t max_events,
+        sinsp_buffer_t buffer_h = SINSP_INVALID_BUFFER_HANDLE);
+
+// Example function showing how to use buffers in a multi-threaded scenario
+event_processing_stats process_events_with_buffer(
+        sinsp& inspector,
+        std::function<void(sinsp&, sinsp_evt*, sinsp_buffer_t)> dump_func,
+        bool perftest_mode,
+        bool all_threads,
+        uint64_t max_events);
+
+// Parallel event processing with multiple threads
+event_processing_stats process_events_parallel(
+        sinsp& inspector,
+        std::function<void(sinsp&, sinsp_evt*, sinsp_buffer_t)> dump_func,
+        bool perftest_mode,
+        bool all_threads,
+        uint64_t max_events,
+        uint32_t num_threads);
 
 const char* state_type_to_string(ss_plugin_state_type type) {
 	switch(type) {
@@ -305,13 +347,103 @@ std::string process_output = PROCESS_DEFAULTS;
 std::string net_output = PROCESS_DEFAULTS " %fd.name";
 std::string plugin_output = PLUGIN_DEFAULTS;
 
-static std::unique_ptr<sinsp_evt_formatter> default_formatter = nullptr;
-static std::unique_ptr<sinsp_evt_formatter> process_formatter = nullptr;
-static std::unique_ptr<sinsp_evt_formatter> net_formatter = nullptr;
-static std::unique_ptr<sinsp_evt_formatter> plugin_evt_formatter = nullptr;
+// Formatter vectors - one entry per buffer handle
+static std::vector<std::unique_ptr<sinsp_evt_formatter>> default_formatters;
+static std::vector<std::unique_ptr<sinsp_evt_formatter>> process_formatters;
+static std::vector<std::unique_ptr<sinsp_evt_formatter>> net_formatters;
+static std::vector<std::unique_ptr<sinsp_evt_formatter>> plugin_evt_formatters;
+
+// Function to initialize formatter vectors for the specified number of threads
+static void initialize_formatter_vectors(sinsp& inspector, uint32_t num_threads) {
+	default_formatters.resize(num_threads);
+	process_formatters.resize(num_threads);
+	net_formatters.resize(num_threads);
+	plugin_evt_formatters.resize(num_threads);
+
+	// Create all formatters upfront
+	for(uint32_t i = 0; i < num_threads; ++i) {
+		default_formatters[i] = std::make_unique<sinsp_evt_formatter>(&inspector,
+		                                                              default_output,
+		                                                              *filter_list.get());
+		process_formatters[i] = std::make_unique<sinsp_evt_formatter>(&inspector,
+		                                                              process_output,
+		                                                              *filter_list.get());
+		net_formatters[i] =
+		        std::make_unique<sinsp_evt_formatter>(&inspector, net_output, *filter_list.get());
+		plugin_evt_formatters[i] = std::make_unique<sinsp_evt_formatter>(&inspector,
+		                                                                 plugin_output,
+		                                                                 *filter_list.get());
+	}
+}
+
+// Helper function to get formatter for buffer handle
+static sinsp_evt_formatter* get_default_formatter(sinsp_buffer_t buffer_h) {
+	// Use buffer_h as index, but handle SINSP_INVALID_BUFFER_HANDLE specially
+	uint32_t index = (buffer_h == SINSP_INVALID_BUFFER_HANDLE) ? 0 : buffer_h - 1;
+	return default_formatters[index].get();
+}
+
+static sinsp_evt_formatter* get_process_formatter(sinsp_buffer_t buffer_h) {
+	uint32_t index = (buffer_h == SINSP_INVALID_BUFFER_HANDLE) ? 0 : buffer_h - 1;
+	return process_formatters[index].get();
+}
+
+static sinsp_evt_formatter* get_net_formatter(sinsp_buffer_t buffer_h) {
+	uint32_t index = (buffer_h == SINSP_INVALID_BUFFER_HANDLE) ? 0 : buffer_h - 1;
+	return net_formatters[index].get();
+}
+
+static sinsp_evt_formatter* get_plugin_evt_formatter(sinsp_buffer_t buffer_h) {
+	uint32_t index = (buffer_h == SINSP_INVALID_BUFFER_HANDLE) ? 0 : buffer_h - 1;
+	return plugin_evt_formatters[index].get();
+}
+
+// Global inspector pointer for cleanup
+static sinsp* g_inspector = nullptr;
+
+// Safe print function for signal handlers (async-signal safe)
+static void safe_print(const char* message) {
+	write(STDOUT_FILENO, message, strlen(message));
+}
 
 static void sigint_handler(int signum) {
+	// Use safe print for critical signal notification
+	safe_print("\n-- Signal received, shutting down...\n");
 	g_interrupted = true;
+}
+
+static void check_interruption() {
+	static bool interruption_reported = false;
+	if(g_interrupted && !interruption_reported) {
+		std::cout << "\n-- Received signal, initiating graceful shutdown..." << std::endl;
+		interruption_reported = true;
+	}
+}
+
+static void cleanup_resources() {
+	if(g_inspector == nullptr) {
+		return;
+	}
+
+	std::cout << "-- Cleaning up resources..." << std::endl;
+
+	// Stop capture if it's running
+	try {
+		g_inspector->stop_capture();
+		std::cout << "-- Capture stopped" << std::endl;
+	} catch(const std::exception& e) {
+		std::cerr << "-- Warning: Error stopping capture: " << e.what() << std::endl;
+	}
+
+	// Close the engine
+	try {
+		g_inspector->close();
+		std::cout << "-- Engine closed" << std::endl;
+	} catch(const std::exception& e) {
+		std::cerr << "-- Warning: Error closing engine: " << e.what() << std::endl;
+	}
+
+	std::cout << "-- Cleanup completed" << std::endl;
 }
 
 static void usage() {
@@ -347,6 +479,7 @@ Options:
   -r, --raw                                  raw event ouput
   -t, --perftest                             Run in performance test mode
   -T, --tables                               -T or -Tbrief print tables descriptions. -Tlist print table entries, if -n is specified, print only the first n entries.
+  -P, --processing-threads <num>             Number of threads for parallel event processing (default: 1)
 )";
 	cout << usage << endl;
 }
@@ -386,6 +519,7 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 	                                       {"gvisor", optional_argument, nullptr, 'G'},
 	                                       {"perftest", no_argument, nullptr, 't'},
 	                                       {"tables", optional_argument, nullptr, 'T'},
+	                                       {"processing-threads", required_argument, nullptr, 'P'},
 	                                       {nullptr, 0, nullptr, 0}};
 
 	bool format_set = false;
@@ -393,7 +527,7 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 	int long_index = 0;
 	while((op = getopt_long(argc,
 	                        argv,
-	                        "hf:jab:mks:p:d:c:Ao:En:zxqgrtT::G::",
+	                        "hf:jab:mks:p:d:c:Ao:En:zxqgrtT::G::P:",
 	                        long_options,
 	                        &long_index)) != -1) {
 		switch(op) {
@@ -538,6 +672,13 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 			if(table_mode != "brief" && table_mode != "list") {
 				std::cerr << "Invalid table mode: " << table_mode << ". Use 'brief' or 'list'."
 				          << std::endl;
+				exit(EXIT_FAILURE);
+			}
+			break;
+		case 'P':
+			num_processing_threads = std::atoi(optarg);
+			if(num_processing_threads == 0) {
+				std::cerr << "Number of processing threads must be greater than 0" << std::endl;
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -696,6 +837,157 @@ error:
 }
 #endif  // __linux__
 
+event_processing_stats process_events_loop(
+        sinsp& inspector,
+        std::function<void(sinsp&, sinsp_evt*, sinsp_buffer_t)> dump_func,
+        bool perftest_mode,
+        bool all_threads,
+        uint64_t max_events,
+        sinsp_buffer_t buffer_h) {
+	event_processing_stats stats;
+
+	while(!g_interrupted && stats.num_events < max_events) {
+		check_interruption();
+		sinsp_evt* ev = get_event(
+		        inspector,
+		        [](const std::string& error_msg) { cout << "[ERROR] " << error_msg << endl; },
+		        buffer_h);
+		if(ev != nullptr) {
+			uint64_t ts_ns = ev->get_ts();
+			sinsp_threadinfo* thread = ev->get_thread_info();
+			++stats.num_events;
+			uint64_t evt_diff = stats.num_events - stats.last_events;
+			if(perftest_mode) {
+#if __linux__
+				// Perftest mode does not print individual events but instead prints a running
+				// throughput every second
+				if(ts_ns - stats.last_ts_ns > 1'000'000'000) {
+					int cpu_usage = get_cpu_usage_percent();
+					stats.cpu_total += cpu_usage;
+					++stats.num_samples;
+					long double curr_throughput = evt_diff / (long double)1000;
+					std::cout << "Events: " << (stats.num_events - stats.last_events)
+					          << " Events/ms: " << curr_throughput << " CPU: " << cpu_usage
+					          << "%                      \r" << std::flush;
+					if(curr_throughput > stats.max_throughput) {
+						stats.max_throughput = curr_throughput;
+					}
+					stats.last_ts_ns = ts_ns;
+					stats.last_events = stats.num_events;
+#else   // __linux__
+				if(ts_ns - stats.last_ts_ns > 1'000'000'000) {
+					++stats.num_samples;
+					long double curr_throughput = evt_diff / (long double)1000;
+					std::cout << "Events: " << (stats.num_events - stats.last_events)
+					          << " Events/ms: " << curr_throughput << "                      \r"
+					          << std::flush;
+					if(curr_throughput > stats.max_throughput) {
+						stats.max_throughput = curr_throughput;
+					}
+					stats.last_ts_ns = ts_ns;
+					stats.last_events = stats.num_events;
+#endif  // __linux__
+				}
+			} else if(!thread || all_threads || thread->is_main_thread()) {
+				dump_func(inspector, ev, buffer_h);
+			}
+		}
+	}
+
+	return stats;
+}
+
+event_processing_stats process_events_with_buffer(
+        sinsp& inspector,
+        std::function<void(sinsp&, sinsp_evt*, sinsp_buffer_t)> dump_func,
+        bool perftest_mode,
+        bool all_threads,
+        uint64_t max_events) {
+	// Reserve a buffer handle for this thread
+	sinsp_buffer_t buffer_h = inspector.reserve_buffer_handle();
+
+	// Use the main process_events_loop function with the reserved buffer
+	return process_events_loop(inspector,
+	                           dump_func,
+	                           perftest_mode,
+	                           all_threads,
+	                           max_events,
+	                           buffer_h);
+}
+
+event_processing_stats process_events_parallel(
+        sinsp& inspector,
+        std::function<void(sinsp&, sinsp_evt*, sinsp_buffer_t)> dump_func,
+        bool perftest_mode,
+        bool all_threads,
+        uint64_t max_events,
+        uint32_t num_threads) {
+	event_processing_stats total_stats;
+	std::vector<std::thread> threads;
+	std::vector<event_processing_stats> thread_stats(num_threads);
+	std::atomic<uint64_t> global_event_count{0};
+
+	// Create worker threads
+	for(uint32_t i = 0; i < num_threads; ++i) {
+		threads.emplace_back([&, i]() {
+			// Reserve a buffer handle for this thread
+			sinsp_buffer_t buffer_h = inspector.reserve_buffer_handle();
+
+			// Calculate events per thread (distribute evenly)
+			uint64_t events_per_thread = max_events / num_threads;
+			uint64_t thread_max_events =
+			        (i == num_threads - 1) ? (max_events - (events_per_thread * (num_threads - 1)))
+			                               : events_per_thread;
+
+			// Process events for this thread
+			thread_stats[i] = process_events_loop(inspector,
+			                                      dump_func,
+			                                      perftest_mode,
+			                                      all_threads,
+			                                      thread_max_events,
+			                                      buffer_h);
+
+			// Update global event count
+			global_event_count.fetch_add(thread_stats[i].num_events);
+		});
+	}
+
+	// Wait for all threads to complete or until interrupted
+	auto start_time = std::chrono::steady_clock::now();
+	for(auto& thread : threads) {
+		check_interruption();
+		if(g_interrupted) {
+			std::cout << "-- Interruption detected, waiting for threads to finish..." << std::endl;
+
+			// Check for timeout
+			auto elapsed = std::chrono::steady_clock::now() - start_time;
+			if(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() >
+			   g_shutdown_timeout_secs) {
+				std::cout << "-- Shutdown timeout reached, forcing exit..." << std::endl;
+				break;
+			}
+		}
+		thread.join();
+	}
+
+	// Aggregate statistics from all threads
+	for(const auto& stats : thread_stats) {
+		total_stats.num_events += stats.num_events;
+		total_stats.cpu_total += stats.cpu_total;
+		total_stats.num_samples += stats.num_samples;
+		if(stats.max_throughput > total_stats.max_throughput) {
+			total_stats.max_throughput = stats.max_throughput;
+		}
+	}
+
+	// Calculate average CPU usage
+	if(total_stats.num_samples > 0) {
+		total_stats.cpu_total /= num_threads;  // Average across threads
+	}
+
+	return total_stats;
+}
+
 static std::string format_suggested_field(const filtercheck_field_info* info) {
 	std::ostringstream out;
 
@@ -716,6 +1008,10 @@ static std::string format_suggested_field(const filtercheck_field_info* info) {
 //
 int main(int argc, char** argv) {
 	sinsp inspector;
+	g_inspector = &inspector;
+
+	// Register cleanup function for graceful shutdown
+	atexit(cleanup_resources);
 
 	filter_list.reset(new sinsp_filter_check_list());
 	filter_factory.reset(new sinsp_filter_factory(&inspector, *filter_list.get()));
@@ -796,93 +1092,75 @@ int main(int argc, char** argv) {
 
 	inspector.start_capture();
 
-	default_formatter =
-	        std::make_unique<sinsp_evt_formatter>(&inspector, default_output, *filter_list.get());
-	process_formatter =
-	        std::make_unique<sinsp_evt_formatter>(&inspector, process_output, *filter_list.get());
-	net_formatter =
-	        std::make_unique<sinsp_evt_formatter>(&inspector, net_output, *filter_list.get());
-	plugin_evt_formatter =
-	        std::make_unique<sinsp_evt_formatter>(&inspector, plugin_output, *filter_list.get());
+	// Initialize formatter vectors for the number of processing threads
+	initialize_formatter_vectors(inspector, num_processing_threads);
 
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-	uint64_t num_events = 0, last_events = 0;
-	uint64_t last_ts_ns = 0;
-	uint64_t cpu_total = 0;
-	uint64_t num_samples = 0;
-	while(!g_interrupted && num_events < max_events) {
-		sinsp_evt* ev = get_event(inspector, [](const std::string& error_msg) {
-			cout << "[ERROR] " << error_msg << endl;
-		});
-		if(ev != nullptr) {
-			uint64_t ts_ns = ev->get_ts();
-			sinsp_threadinfo* thread = ev->get_thread_info();
-			++num_events;
-			uint64_t evt_diff = num_events - last_events;
-			if(perftest) {
-#if __linux__
-				// Perftest mode does not print individual events but instead prints a running
-				// throughput every second
-				if(ts_ns - last_ts_ns > 1'000'000'000) {
-					int cpu_usage = get_cpu_usage_percent();
-					cpu_total += cpu_usage;
-					++num_samples;
-					long double curr_throughput = evt_diff / (long double)1000;
-					std::cout << "Events: " << (num_events - last_events)
-					          << " Events/ms: " << curr_throughput << " CPU: " << cpu_usage
-					          << "%                      \r" << std::flush;
-					if(curr_throughput > max_throughput) {
-						max_throughput = curr_throughput;
-					}
-					last_ts_ns = ts_ns;
-					last_events = num_events;
-#else   // __linux__
-				if(ts_ns - last_ts_ns > 1'000'000'000) {
-					++num_samples;
-					long double curr_throughput = evt_diff / (long double)1000;
-					std::cout << "Events: " << (num_events - last_events)
-					          << " Events/ms: " << curr_throughput << "                      \r"
-					          << std::flush;
-					if(curr_throughput > max_throughput) {
-						max_throughput = curr_throughput;
-					}
-					last_ts_ns = ts_ns;
-					last_events = num_events;
-#endif  // __linux__
-				}
-			} else if(!thread || g_all_threads || thread->is_main_thread()) {
-				dump(inspector, ev);
-			}
-		}
+
+	event_processing_stats stats;
+	if(num_processing_threads > 1) {
+		std::cout << "-- Starting parallel event processing with " << num_processing_threads
+		          << " threads" << std::endl;
+		stats = process_events_parallel(inspector,
+		                                dump,
+		                                perftest,
+		                                g_all_threads,
+		                                max_events,
+		                                num_processing_threads);
+	} else {
+		stats = process_events_loop(inspector,
+		                            dump,
+		                            perftest,
+		                            g_all_threads,
+		                            max_events,
+		                            SINSP_INVALID_BUFFER_HANDLE);
 	}
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	const auto duration =
 	        std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
 
-	inspector.stop_capture();
+	// Check if we were interrupted
+	if(g_interrupted) {
+		std::cout << "-- Shutdown requested, stopping capture..." << std::endl;
+	} else {
+		std::cout << "-- Stop capture" << std::endl;
+	}
 
-	std::cout
-	        << "-- Stop capture                                                                    "
-	        << std::endl;
-	std::cout << "Retrieved events: " << std::to_string(num_events) << std::endl;
+	inspector.stop_capture();
+	std::cout << "Retrieved events: " << std::to_string(stats.num_events) << std::endl;
+	if(num_processing_threads > 1) {
+		std::cout << "Processing threads: " << num_processing_threads << std::endl;
+	}
 	std::cout << "Time spent: " << duration << "ms" << std::endl;
 	if(duration > 0) {
-		std::cout << "Events/ms: " << num_events / (long double)duration << std::endl;
+		std::cout << "Events/ms: " << stats.num_events / (long double)duration << std::endl;
 	}
-	if(max_throughput > 0) {
-		std::cout << "Max throughput observed: " << max_throughput << " events / ms" << std::endl;
+	if(stats.max_throughput > 0) {
+		std::cout << "Max throughput observed: " << stats.max_throughput << " events / ms"
+		          << std::endl;
 	}
-	if(num_samples > 0) {
-		std::cout << "Average CPU usage: " << cpu_total / num_samples << "%" << std::endl;
+	if(stats.num_samples > 0) {
+		std::cout << "Average CPU usage: " << stats.cpu_total / stats.num_samples << "%"
+		          << std::endl;
 	}
 
-	return 0;
+	// Clear global inspector pointer before exit
+	g_inspector = nullptr;
+
+	if(g_interrupted) {
+		std::cout << "-- Graceful shutdown completed" << std::endl;
+		return 0;
+	} else {
+		return 0;
+	}
 }
 
-sinsp_evt* get_event(sinsp& inspector, std::function<void(const std::string&)> handle_error) {
+sinsp_evt* get_event(sinsp& inspector,
+                     std::function<void(const std::string&)> handle_error,
+                     sinsp_buffer_t buffer_h) {
 	sinsp_evt* ev = nullptr;
 
-	int32_t res = inspector.next(&ev);
+	int32_t res = inspector.next(&ev, buffer_h);
 
 	if(res == SCAP_SUCCESS) {
 		return ev;
@@ -894,24 +1172,24 @@ sinsp_evt* get_event(sinsp& inspector, std::function<void(const std::string&)> h
 	}
 
 	if(res != SCAP_TIMEOUT && res != SCAP_FILTERED_EVENT) {
-		handle_error(inspector.getlasterr());
+		handle_error(inspector.getlasterr(buffer_h));
 		std::this_thread::sleep_for(std::chrono::seconds(g_backoff_timeout_secs));
 	}
 
 	return nullptr;
 }
 
-void formatted_dump(sinsp&, sinsp_evt* ev) {
+void formatted_dump(sinsp& inspector, sinsp_evt* ev, sinsp_buffer_t buffer_h) {
 	std::string output;
 	if(ev->get_category() == EC_PROCESS) {
-		process_formatter->tostring(ev, output);
+		get_process_formatter(buffer_h)->tostring(ev, output);
 	} else if(ev->get_category() == EC_NET || ev->get_category() == EC_IO_READ ||
 	          ev->get_category() == EC_IO_WRITE) {
-		net_formatter->tostring(ev, output);
+		get_net_formatter(buffer_h)->tostring(ev, output);
 	} else if(ev->get_info()->category & EC_PLUGIN) {
-		plugin_evt_formatter->tostring(ev, output);
+		get_plugin_evt_formatter(buffer_h)->tostring(ev, output);
 	} else {
-		default_formatter->tostring(ev, output);
+		get_default_formatter(buffer_h)->tostring(ev, output);
 	}
 
 	cout << output << std::endl;
@@ -948,7 +1226,7 @@ static void hexdump(const unsigned char* buf, size_t len) {
 	putc(']', stdout);
 }
 
-void raw_dump(sinsp& inspector, sinsp_evt* ev) {
+void raw_dump(sinsp& inspector, sinsp_evt* ev, sinsp_buffer_t buffer_h) {
 	string date_time;
 	sinsp_utils::ts_to_iso_8601(ev->get_ts(), &date_time);
 

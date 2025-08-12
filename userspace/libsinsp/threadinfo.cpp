@@ -708,20 +708,8 @@ sinsp_threadinfo* sinsp_threadinfo::get_parent_thread() {
 }
 
 sinsp_threadinfo* sinsp_threadinfo::get_ancestor_process(uint32_t n) {
-	sinsp_threadinfo* mt = get_main_thread();
-
-	for(uint32_t i = 0; i < n; i++) {
-		if(mt == nullptr) {
-			return nullptr;
-		}
-		mt = mt->get_parent_thread();
-		if(mt == nullptr) {
-			return nullptr;
-		}
-		mt = mt->get_main_thread();
-	}
-
-	return mt;
+	// Use thread manager method to eliminate cross-class deadlock risk
+	return m_params->thread_manager->get_ancestor_process(m_tid, n);
 }
 
 sinsp_fdinfo* sinsp_threadinfo::add_fd(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
@@ -965,10 +953,11 @@ void sinsp_threadinfo::traverse_parent_state(visitor_func_t& visitor) {
 	// state, at different rates. If they ever equal each other
 	// before slow is NULL there's a loop.
 
-	sinsp_threadinfo *slow = this->get_parent_thread(), *fast = slow;
+	// Use thread manager methods to eliminate cross-class deadlock risk
+	sinsp_threadinfo *slow = m_params->thread_manager->get_parent_thread(m_tid), *fast = slow;
 
 	// Move fast to its parent
-	fast = (fast ? fast->get_parent_thread() : fast);
+	fast = (fast ? m_params->thread_manager->get_parent_thread(fast->m_tid) : fast);
 
 	// The slow pointer must be valid and not have a tid of -1.
 	while(slow && slow->m_tid != -1) {
@@ -977,12 +966,12 @@ void sinsp_threadinfo::traverse_parent_state(visitor_func_t& visitor) {
 		}
 
 		// Advance slow one step and advance fast two steps
-		slow = slow->get_parent_thread();
+		slow = m_params->thread_manager->get_parent_thread(slow->m_tid);
 
 		// advance fast 2 steps, checking to see if we meet
 		// slow after each step.
 		for(uint32_t i = 0; i < 2; i++) {
-			fast = (fast ? fast->get_parent_thread() : fast);
+			fast = (fast ? m_params->thread_manager->get_parent_thread(fast->m_tid) : fast);
 
 			// If not at the end but fast == slow or if
 			// slow points to itself, there's a loop in

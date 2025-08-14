@@ -62,7 +62,7 @@ void formatted_dump(sinsp&, sinsp_evt* ev, sinsp_buffer_t buffer_h = SINSP_INVAL
 
 libsinsp::events::set<ppm_sc_code> extract_filter_sc_codes(sinsp& inspector);
 std::function<void(sinsp&, sinsp_evt*, sinsp_buffer_t)> dump = formatted_dump;
-static bool g_interrupted = false;
+static std::atomic<bool> g_interrupted{false};
 static const uint8_t g_backoff_timeout_secs = 2;
 static const uint8_t g_shutdown_timeout_secs = 10;  // Timeout for graceful shutdown
 static bool g_all_threads = false;
@@ -92,12 +92,61 @@ sinsp_evt* get_event(sinsp& inspector,
                      sinsp_buffer_t buffer_h = SINSP_INVALID_BUFFER_HANDLE);
 
 struct event_processing_stats {
-	uint64_t num_events = 0;
-	uint64_t last_events = 0;
-	uint64_t last_ts_ns = 0;
-	uint64_t cpu_total = 0;
-	uint64_t num_samples = 0;
-	double max_throughput = 0.0;
+	std::atomic<uint64_t> num_events{0};
+	std::atomic<uint64_t> last_events{0};
+	std::atomic<uint64_t> last_ts_ns{0};
+	std::atomic<uint64_t> cpu_total{0};
+	std::atomic<uint64_t> num_samples{0};
+	std::atomic<double> max_throughput{0.0};
+
+	// Default constructor
+	event_processing_stats() = default;
+
+	// Copy constructor
+	event_processing_stats(const event_processing_stats& other) {
+		num_events.store(other.num_events.load());
+		last_events.store(other.last_events.load());
+		last_ts_ns.store(other.last_ts_ns.load());
+		cpu_total.store(other.cpu_total.load());
+		num_samples.store(other.num_samples.load());
+		max_throughput.store(other.max_throughput.load());
+	}
+
+	// Copy assignment operator
+	event_processing_stats& operator=(const event_processing_stats& other) {
+		if(this != &other) {
+			num_events.store(other.num_events.load());
+			last_events.store(other.last_events.load());
+			last_ts_ns.store(other.last_ts_ns.load());
+			cpu_total.store(other.cpu_total.load());
+			num_samples.store(other.num_samples.load());
+			max_throughput.store(other.max_throughput.load());
+		}
+		return *this;
+	}
+
+	// Move constructor
+	event_processing_stats(event_processing_stats&& other) noexcept {
+		num_events.store(other.num_events.load());
+		last_events.store(other.last_events.load());
+		last_ts_ns.store(other.last_ts_ns.load());
+		cpu_total.store(other.cpu_total.load());
+		num_samples.store(other.num_samples.load());
+		max_throughput.store(other.max_throughput.load());
+	}
+
+	// Move assignment operator
+	event_processing_stats& operator=(event_processing_stats&& other) noexcept {
+		if(this != &other) {
+			num_events.store(other.num_events.load());
+			last_events.store(other.last_events.load());
+			last_ts_ns.store(other.last_ts_ns.load());
+			cpu_total.store(other.cpu_total.load());
+			num_samples.store(other.num_samples.load());
+			max_throughput.store(other.max_throughput.load());
+		}
+		return *this;
+	}
 };
 
 event_processing_stats process_events_loop(
@@ -409,12 +458,12 @@ static void safe_print(const char* message) {
 static void sigint_handler(int signum) {
 	// Use safe print for critical signal notification
 	safe_print("\n-- Signal received, shutting down...\n");
-	g_interrupted = true;
+	g_interrupted.store(true);
 }
 
 static void check_interruption() {
 	static bool interruption_reported = false;
-	if(g_interrupted && !interruption_reported) {
+	if(g_interrupted.load() && !interruption_reported) {
 		std::cout << "\n-- Received signal, initiating graceful shutdown..." << std::endl;
 		interruption_reported = true;
 	}
@@ -846,7 +895,7 @@ event_processing_stats process_events_loop(
         sinsp_buffer_t buffer_h) {
 	event_processing_stats stats;
 
-	while(!g_interrupted && stats.num_events < max_events) {
+	while(!g_interrupted.load() && stats.num_events.load() < max_events) {
 		check_interruption();
 		sinsp_evt* ev = get_event(
 		        inspector,
@@ -855,37 +904,47 @@ event_processing_stats process_events_loop(
 		if(ev != nullptr) {
 			uint64_t ts_ns = ev->get_ts();
 			sinsp_threadinfo* thread = ev->get_thread_info();
-			++stats.num_events;
-			uint64_t evt_diff = stats.num_events - stats.last_events;
+			stats.num_events.fetch_add(1);
+			uint64_t evt_diff = stats.num_events.load() - stats.last_events.load();
 			if(perftest_mode) {
 #if __linux__
 				// Perftest mode does not print individual events but instead prints a running
 				// throughput every second
-				if(ts_ns - stats.last_ts_ns > 1'000'000'000) {
+				if(ts_ns - stats.last_ts_ns.load() > 1'000'000'000) {
 					int cpu_usage = get_cpu_usage_percent();
-					stats.cpu_total += cpu_usage;
-					++stats.num_samples;
+					stats.cpu_total.fetch_add(cpu_usage);
+					stats.num_samples.fetch_add(1);
 					long double curr_throughput = evt_diff / (long double)1000;
-					std::cout << "Events: " << (stats.num_events - stats.last_events)
+					std::cout << "Events: " << (stats.num_events.load() - stats.last_events.load())
 					          << " Events/ms: " << curr_throughput << " CPU: " << cpu_usage
 					          << "%                      \r" << std::flush;
-					if(curr_throughput > stats.max_throughput) {
-						stats.max_throughput = curr_throughput;
+					if(curr_throughput > stats.max_throughput.load()) {
+						double current = stats.max_throughput.load();
+						while(curr_throughput > current &&
+						      !stats.max_throughput.compare_exchange_weak(current,
+						                                                  curr_throughput)) {
+							// Retry if compare_exchange_weak failed
+						}
 					}
-					stats.last_ts_ns = ts_ns;
-					stats.last_events = stats.num_events;
+					stats.last_ts_ns.store(ts_ns);
+					stats.last_events.store(stats.num_events.load());
 #else   // __linux__
-				if(ts_ns - stats.last_ts_ns > 1'000'000'000) {
-					++stats.num_samples;
+				if(ts_ns - stats.last_ts_ns.load() > 1'000'000'000) {
+					stats.num_samples.fetch_add(1);
 					long double curr_throughput = evt_diff / (long double)1000;
-					std::cout << "Events: " << (stats.num_events - stats.last_events)
+					std::cout << "Events: " << (stats.num_events.load() - stats.last_events.load())
 					          << " Events/ms: " << curr_throughput << "                      \r"
 					          << std::flush;
-					if(curr_throughput > stats.max_throughput) {
-						stats.max_throughput = curr_throughput;
+					if(curr_throughput > stats.max_throughput.load()) {
+						double current = stats.max_throughput.load();
+						while(curr_throughput > current &&
+						      !stats.max_throughput.compare_exchange_weak(current,
+						                                                  curr_throughput)) {
+							// Retry if compare_exchange_weak failed
+						}
 					}
-					stats.last_ts_ns = ts_ns;
-					stats.last_events = stats.num_events;
+					stats.last_ts_ns.store(ts_ns);
+					stats.last_events.store(stats.num_events.load());
 #endif  // __linux__
 				}
 			} else if(!thread || all_threads || thread->is_main_thread()) {
@@ -956,7 +1015,7 @@ event_processing_stats process_events_parallel(
 	auto start_time = std::chrono::steady_clock::now();
 	for(auto& thread : threads) {
 		check_interruption();
-		if(g_interrupted) {
+		if(g_interrupted.load()) {
 			std::cout << "-- Interruption detected, waiting for threads to finish..." << std::endl;
 
 			// Check for timeout
@@ -972,17 +1031,23 @@ event_processing_stats process_events_parallel(
 
 	// Aggregate statistics from all threads
 	for(const auto& stats : thread_stats) {
-		total_stats.num_events += stats.num_events;
-		total_stats.cpu_total += stats.cpu_total;
-		total_stats.num_samples += stats.num_samples;
-		if(stats.max_throughput > total_stats.max_throughput) {
-			total_stats.max_throughput = stats.max_throughput;
+		total_stats.num_events.fetch_add(stats.num_events.load());
+		total_stats.cpu_total.fetch_add(stats.cpu_total.load());
+		total_stats.num_samples.fetch_add(stats.num_samples.load());
+		if(stats.max_throughput.load() > total_stats.max_throughput.load()) {
+			double current = total_stats.max_throughput.load();
+			while(stats.max_throughput.load() > current &&
+			      !total_stats.max_throughput.compare_exchange_weak(current,
+			                                                        stats.max_throughput.load())) {
+				// Retry if compare_exchange_weak failed
+			}
 		}
 	}
 
 	// Calculate average CPU usage
-	if(total_stats.num_samples > 0) {
-		total_stats.cpu_total /= num_threads;  // Average across threads
+	if(total_stats.num_samples.load() > 0) {
+		uint64_t current = total_stats.cpu_total.load();
+		total_stats.cpu_total.store(current / num_threads);  // Average across threads
 	}
 
 	return total_stats;
@@ -1088,7 +1153,6 @@ int main(int argc, char** argv) {
 	}
 
 	std::cout << "-- Start capture" << std::endl;
-	double max_throughput = 0.0;
 
 	inspector.start_capture();
 
@@ -1120,34 +1184,34 @@ int main(int argc, char** argv) {
 	        std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
 
 	// Check if we were interrupted
-	if(g_interrupted) {
+	if(g_interrupted.load()) {
 		std::cout << "-- Shutdown requested, stopping capture..." << std::endl;
 	} else {
 		std::cout << "-- Stop capture" << std::endl;
 	}
 
 	inspector.stop_capture();
-	std::cout << "Retrieved events: " << std::to_string(stats.num_events) << std::endl;
+	std::cout << "Retrieved events: " << std::to_string(stats.num_events.load()) << std::endl;
 	if(num_processing_threads > 1) {
 		std::cout << "Processing threads: " << num_processing_threads << std::endl;
 	}
 	std::cout << "Time spent: " << duration << "ms" << std::endl;
 	if(duration > 0) {
-		std::cout << "Events/ms: " << stats.num_events / (long double)duration << std::endl;
+		std::cout << "Events/ms: " << stats.num_events.load() / (long double)duration << std::endl;
 	}
-	if(stats.max_throughput > 0) {
-		std::cout << "Max throughput observed: " << stats.max_throughput << " events / ms"
+	if(stats.max_throughput.load() > 0) {
+		std::cout << "Max throughput observed: " << stats.max_throughput.load() << " events / ms"
 		          << std::endl;
 	}
-	if(stats.num_samples > 0) {
-		std::cout << "Average CPU usage: " << stats.cpu_total / stats.num_samples << "%"
-		          << std::endl;
+	if(stats.num_samples.load() > 0) {
+		std::cout << "Average CPU usage: " << stats.cpu_total.load() / stats.num_samples.load()
+		          << "%" << std::endl;
 	}
 
 	// Clear global inspector pointer before exit
 	g_inspector = nullptr;
 
-	if(g_interrupted) {
+	if(g_interrupted.load()) {
 		std::cout << "-- Graceful shutdown completed" << std::endl;
 		return 0;
 	} else {
@@ -1167,7 +1231,7 @@ sinsp_evt* get_event(sinsp& inspector,
 	}
 	if(res == SCAP_EOF) {
 		std::cout << "-- EOF" << std::endl;
-		g_interrupted = true;
+		g_interrupted.store(true);
 		return nullptr;
 	}
 

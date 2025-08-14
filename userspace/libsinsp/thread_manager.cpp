@@ -142,14 +142,14 @@ sinsp_thread_manager::sinsp_thread_manager(
 }
 
 void sinsp_thread_manager::clear() {
-	// Lock ordering: THREADTABLE -> THREAD_GROUPS -> CACHE -> STATS -> FLUSH
+	// Lock ordering: THREAD_GROUPS -> THREADTABLE -> CACHE -> STATS -> FLUSH
 	// This order must be consistent across all methods to prevent deadlocks
 
-	// Step 1: Lock thread table (highest priority)
-	std::unique_lock<std::shared_mutex> threadtable_lock(m_threadtable_mutex);
-
-	// Step 2: Lock thread groups
+	// Step 1: Lock thread groups (M0) - standard lock order
 	std::unique_lock<std::shared_mutex> groups_lock(m_thread_groups_mutex);
+
+	// Step 2: Lock thread table (M1) - standard lock order
+	std::unique_lock<std::shared_mutex> threadtable_lock(m_threadtable_mutex);
 
 	// Step 3: Lock cache
 	std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
@@ -171,6 +171,11 @@ void sinsp_thread_manager::clear() {
 }
 
 /* This is called on the table after the `/proc` scan */
+/*
+ * LOCK ORDERING: This method must NOT be called while holding m_threadtable_mutex (M1).
+ * It acquires m_thread_groups_mutex internally, and the lock order must be:
+ * m_thread_groups_mutex (M0) -> m_threadtable_mutex (M1) to prevent deadlocks.
+ */
 void sinsp_thread_manager::create_thread_dependencies(
         const std::shared_ptr<sinsp_threadinfo>& tinfo) {
 	/* This should never happen */
@@ -634,10 +639,23 @@ void sinsp_thread_manager::reset_child_dependencies() {
 }
 
 void sinsp_thread_manager::create_thread_dependencies_after_proc_scan() {
+	// LOCK ORDERING: Acquire m_threadtable_mutex (M1) first, then m_thread_groups_mutex (M0) in
+	// create_thread_dependencies This prevents deadlocks between clear() and
+	// create_thread_dependencies()
+
+	// First, collect all thread info we need to process
+	std::vector<std::shared_ptr<sinsp_threadinfo>> threads_to_process;
+
+	// Acquire thread table lock (M1) and collect thread data
 	m_threadtable.const_loop_shared_pointer([&](const std::shared_ptr<sinsp_threadinfo>& tinfo) {
-		create_thread_dependencies(tinfo);
+		threads_to_process.push_back(tinfo);
 		return true;
 	});
+
+	// Now process each thread, acquiring thread groups lock (M0) as needed
+	for(const auto& tinfo : threads_to_process) {
+		create_thread_dependencies(tinfo);
+	}
 }
 
 void sinsp_thread_manager::free_dump_fdinfos(std::vector<scap_fdinfo*>* fdinfos_to_free) {

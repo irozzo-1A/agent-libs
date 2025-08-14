@@ -40,6 +40,18 @@ class sinsp_observer;
 
 ///////////////////////////////////////////////////////////////////////////////
 // This class manages the thread table
+//
+// LOCK ORDERING: To prevent deadlocks, always acquire locks in this order:
+// 1. m_thread_groups_mutex (M0)
+// 2. m_threadtable_mutex (M1) - protects the thread table object
+// 3. m_threadtable.m_mutex (M2) - protects the internal threads map
+// 4. Other mutexes
+//
+// This ordering must be followed in all code paths to prevent lock-order-inversion
+// deadlocks between clear() and create_thread_dependencies() methods.
+//
+// IMPORTANT: Never acquire M2 while holding M0, as this can cause deadlocks
+// with the clear() method which acquires M0 -> M1 -> M2.
 ///////////////////////////////////////////////////////////////////////////////
 class SINSP_PUBLIC sinsp_thread_manager : public libsinsp::state::built_in_table<int64_t>,
                                           public libsinsp::state::sinsp_table_owner {

@@ -281,7 +281,9 @@ void sinsp_parser::process_event(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 	// parsing this event. Try to avoid the overhead of a string
 	// compare for every event.
 	if(evt.get_fd_info()) {
-		evt.set_fdinfo_name_changed(evt.get_fd_info()->m_name != evt.get_fd_info()->m_oldname);
+		// Use thread-safe getter methods instead of direct member access
+		evt.set_fdinfo_name_changed(evt.get_fd_info()->get_name() !=
+		                            evt.get_fd_info()->get_oldname());
 	}
 }
 
@@ -1776,10 +1778,12 @@ std::string sinsp_parser::parse_dirfd(sinsp_evt &evt,
 		return "<UNKNOWN>";
 	}
 
-	if(fdinfo->m_name.empty() || fdinfo->m_name.back() == '/') {
-		return fdinfo->m_name;
+	// Use thread-safe getter methods
+	std::string fd_name = fdinfo->get_name();
+	if(fd_name.empty() || fd_name.back() == '/') {
+		return fd_name;
 	}
-	return fdinfo->m_name + '/';
+	return fd_name + '/';
 }
 
 void sinsp_parser::parse_open_openat_creat_exit(sinsp_evt &evt) const {
@@ -3151,8 +3155,8 @@ void sinsp_parser::parse_rw_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 				tupleparam = 4;
 			}
 
-			if(tupleparam != -1 &&
-			   (evt.get_fd_info()->m_name.length() == 0 || !evt.get_fd_info()->is_tcp_socket())) {
+			if(tupleparam != -1 && (evt.get_fd_info()->get_name().length() == 0 ||
+			                        !evt.get_fd_info()->is_tcp_socket())) {
 				//
 				// recvfrom contains tuple info.
 				// If the fd still doesn't contain tuple info (because the socket is a
@@ -3243,7 +3247,8 @@ void sinsp_parser::parse_rw_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 		} else {
 			if((etype == PPME_SOCKET_SEND_X || etype == PPME_SOCKET_SENDTO_X ||
 			    etype == PPME_SOCKET_SENDMSG_X || etype == PPME_SOCKET_SENDMMSG_X) &&
-			   (evt.get_fd_info()->m_name.length() == 0 || !evt.get_fd_info()->is_tcp_socket())) {
+			   (evt.get_fd_info()->get_name().length() == 0 ||
+			    !evt.get_fd_info()->is_tcp_socket())) {
 				// send, sendto, sendmsg and sendmmsg contain tuple info in the exit event.
 				// If the fd still doesn't contain tuple info (because the socket is a datagram one
 				// or because some event was lost), add it here.

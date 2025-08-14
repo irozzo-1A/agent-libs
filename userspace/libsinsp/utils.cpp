@@ -796,30 +796,26 @@ bool sinsp_utils::glob_match(const char* pattern,
 }
 
 static int32_t gmt2local(time_t t) {
-	int dt, dir;
-	struct tm *gmt, *tmp_gmt, *loc;
-	struct tm sgmt;
+	int32_t dt, dir;
+	struct tm gmt, loc;
 
 	if(t == 0) {
 		t = time(NULL);
 	}
 
-	gmt = &sgmt;
-	tmp_gmt = gmtime(&t);
-	if(tmp_gmt == NULL) {
+	// Use thread-safe versions of gmtime and localtime
+	if(gmtime_r(&t, &gmt) == NULL) {
 		throw sinsp_exception("cannot get gmtime");
 	}
-	*gmt = *tmp_gmt;
-	loc = localtime(&t);
-	if(loc == NULL) {
+	if(localtime_r(&t, &loc) == NULL) {
 		throw sinsp_exception("cannot get localtime");
 	}
 
-	dt = (loc->tm_hour - gmt->tm_hour) * 60 * 60 + (loc->tm_min - gmt->tm_min) * 60;
+	dt = (loc.tm_hour - gmt.tm_hour) * 60 * 60 + (loc.tm_min - gmt.tm_min) * 60;
 
-	dir = loc->tm_year - gmt->tm_year;
+	dir = loc.tm_year - gmt.tm_year;
 	if(dir == 0) {
-		dir = loc->tm_yday - gmt->tm_yday;
+		dir = loc.tm_yday - gmt.tm_yday;
 	}
 
 	dt += dir * 24 * 60 * 60;
@@ -828,7 +824,7 @@ static int32_t gmt2local(time_t t) {
 }
 
 void sinsp_utils::ts_to_string(uint64_t ts, std::string* res, bool date, bool ns) {
-	struct tm* tm;
+	struct tm tm;
 	time_t Time;
 	uint64_t sec = ts / ONE_SECOND_IN_NS;
 	uint64_t nsec = ts % ONE_SECOND_IN_NS;
@@ -839,15 +835,11 @@ void sinsp_utils::ts_to_string(uint64_t ts, std::string* res, bool date, bool ns
 
 	if(date) {
 		Time = (sec + thiszone) - s;
-		tm = gmtime(&Time);
-		if(!tm) {
+		// Use thread-safe version of gmtime
+		if(gmtime_r(&Time, &tm) == NULL) {
 			bufsize = sprintf(buf, "<date error> ");
 		} else {
-			bufsize = sprintf(buf,
-			                  "%04d-%02d-%02d ",
-			                  tm->tm_year + 1900,
-			                  tm->tm_mon + 1,
-			                  tm->tm_mday);
+			bufsize = sprintf(buf, "%04d-%02d-%02d ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 		}
 	}
 
@@ -871,8 +863,10 @@ void sinsp_utils::ts_to_iso_8601(uint64_t ts, std::string* res) {
 	char buf[sizeof(TS_STR_FMT)];
 	uint64_t ns = ts % ONE_SECOND_IN_NS;
 	time_t sec = ts / ONE_SECOND_IN_NS;
+	struct tm tm;
 
-	if(strftime(buf, sizeof(buf), "%FT%T", gmtime(&sec)) == 0) {
+	// Use thread-safe version of gmtime
+	if(gmtime_r(&sec, &tm) == NULL || strftime(buf, sizeof(buf), "%FT%T", &tm) == 0) {
 		*res = fmt;
 		return;
 	}
@@ -883,7 +877,7 @@ void sinsp_utils::ts_to_iso_8601(uint64_t ts, std::string* res) {
 		return;
 	}
 	*res += buf;
-	if(strftime(buf, sizeof(buf), "%z", gmtime(&sec)) == 0) {
+	if(strftime(buf, sizeof(buf), "%z", &tm) == 0) {
 		*res = fmt;
 		return;
 	}
@@ -911,8 +905,13 @@ time_t get_epoch_utc_seconds(const std::string& time_str, const std::string& fmt
 time_t get_epoch_utc_seconds_now() {
 #ifndef _WIN32
 	time_t rawtime;
+	struct tm tm;
 	time(&rawtime);
-	return timegm(gmtime(&rawtime));
+	// Use thread-safe version of gmtime
+	if(gmtime_r(&rawtime, &tm) == NULL) {
+		throw sinsp_exception("cannot get gmtime");
+	}
+	return timegm(&tm);
 #else
 	throw sinsp_exception("get_now_seconds() not implemented on Windows");
 #endif  // _WIN32

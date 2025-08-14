@@ -126,12 +126,13 @@ void sinsp_cycledumper::next_file() {
 		if(m_base_filename.find("%") != std::string::npos) {
 			const size_t our_size = 4096;
 			char filename[our_size];
-			const struct tm* our_time = localtime(&m_last_time);
-			if(our_time == nullptr) {
+			struct tm our_time;
+			// Use thread-safe version of localtime
+			if(localtime_r(&m_last_time, &our_time) == nullptr) {
 				throw sinsp_exception("cannot get localtime in cycle_writer::next_file");
 			}
 
-			if(!strftime(filename, our_size, m_base_filename.c_str(), our_time)) {
+			if(!strftime(filename, our_size, m_base_filename.c_str(), &our_time)) {
 				throw sinsp_exception("filename too long!");
 			}
 

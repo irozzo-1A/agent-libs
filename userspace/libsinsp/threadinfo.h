@@ -180,6 +180,7 @@ public:
 	  \brief Return true if this is a process' main thread.
 	*/
 	inline bool is_main_thread() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		return (m_tid == m_pid) || m_flags & PPM_CL_IS_MAIN_THREAD;
 	}
 
@@ -187,6 +188,7 @@ public:
 	  \brief Return true if this thread belongs to a pid namespace.
 	*/
 	inline bool is_in_pid_namespace() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		// m_tid should be always valid because we read it from the scap event header
 		return (m_flags & PPM_CL_CHILD_IN_PIDNS || (m_tid != m_vtid && m_vtid >= 0));
 	}
@@ -195,12 +197,18 @@ public:
 	  \brief Return true if the thread is invalid. Sometimes we create some
 	  invalid thread info, if we are not able to scan proc.
 	*/
-	inline bool is_invalid() const { return m_tid < 0 || m_pid < 0 || m_ptid < 0; }
+	inline bool is_invalid() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_tid < 0 || m_pid < 0 || m_ptid < 0;
+	}
 
 	/*!
 	  \brief Return true if this thread is dead.
 	*/
-	inline bool is_dead() const { return m_flags & PPM_CL_CLOSED; }
+	inline bool is_dead() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_flags & PPM_CL_CLOSED;
+	}
 
 	/*!
 	  \brief Mark this thread as dead.
@@ -231,6 +239,16 @@ public:
 			return 0;
 		}
 
+		// Check if this thread is the main thread first to avoid deadlock
+		if(is_main_thread()) {
+			// This is the main thread, check if it's dead
+			if(!is_dead()) {
+				return m_tginfo->get_thread_count() - 1;
+			}
+			return m_tginfo->get_thread_count();
+		}
+
+		// This is not the main thread, get the main thread
 		auto main_thread = get_main_thread();
 		if(main_thread != nullptr && !main_thread->is_dead()) {
 			return m_tginfo->get_thread_count() - 1;
@@ -268,7 +286,16 @@ public:
 
 		// If we have the main thread in the group, it is always the first one
 		auto possible_main = m_tginfo->get_first_thread();
-		if(possible_main == nullptr || !possible_main->is_main_thread()) {
+		if(possible_main == nullptr) {
+			return nullptr;
+		}
+
+		// Avoid calling is_main_thread() on the same object to prevent deadlock
+		if(possible_main == this) {
+			return nullptr;  // We already checked is_main_thread() above
+		}
+
+		if(!possible_main->is_main_thread()) {
 			return nullptr;
 		}
 		return possible_main;
@@ -276,6 +303,44 @@ public:
 
 	inline const sinsp_threadinfo* get_main_thread() const {
 		return const_cast<sinsp_threadinfo*>(this)->get_main_thread();
+	}
+
+	/*!
+	  \brief Get the main thread of the process containing this thread (unlocked version).
+	  This method should only be called from methods that already hold the lock.
+	*/
+	inline sinsp_threadinfo* get_main_thread_unlocked() {
+		// Check if this thread is the main thread (without acquiring lock)
+		if((m_tid == m_pid) || m_flags & PPM_CL_IS_MAIN_THREAD) {
+			return this;
+		}
+
+		// This is possible when we have invalid threads
+		if(m_tginfo == nullptr) {
+			return nullptr;
+		}
+
+		// If we have the main thread in the group, it is always the first one
+		auto possible_main = m_tginfo->get_first_thread();
+		if(possible_main == nullptr) {
+			return nullptr;
+		}
+
+		// Avoid calling is_main_thread() on the same object to prevent deadlock
+		if(possible_main == this) {
+			return nullptr;  // We already checked is_main_thread() above
+		}
+
+		// Check if possible_main is the main thread (without acquiring lock)
+		if((possible_main->m_tid == possible_main->m_pid) ||
+		   possible_main->m_flags & PPM_CL_IS_MAIN_THREAD) {
+			return possible_main;
+		}
+		return nullptr;
+	}
+
+	inline const sinsp_threadinfo* get_main_thread_unlocked() const {
+		return const_cast<sinsp_threadinfo*>(this)->get_main_thread_unlocked();
 	}
 
 	/*!
@@ -670,7 +735,7 @@ private:
 		if(!(m_flags & PPM_CL_CLONE_FILES)) {
 			return &m_fdtable;
 		} else {
-			sinsp_threadinfo* root = get_main_thread();
+			sinsp_threadinfo* root = get_main_thread_unlocked();
 			return (root == nullptr) ? nullptr : &(root->get_fdtable());
 		}
 	}
@@ -679,7 +744,7 @@ private:
 		if(!(m_flags & PPM_CL_CLONE_FILES)) {
 			return &m_fdtable;
 		} else {
-			const sinsp_threadinfo* root = get_main_thread();
+			const sinsp_threadinfo* root = get_main_thread_unlocked();
 			return (root == nullptr) ? nullptr : &(root->get_fdtable());
 		}
 	}

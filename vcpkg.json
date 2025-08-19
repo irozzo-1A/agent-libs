@@ -1,0 +1,24 @@
+{
+  "name": "falcolibs",
+  "version": "0.0.1",
+  "description": "Falco security libraries",
+  "homepage": "https://github.com/falcosecurity/libs",
+  "dependencies": [
+    {
+      "name": "jsoncpp",
+      "version>=": "1.9.5"
+    },
+    {
+      "name": "prometheus-cpp",
+      "features": [
+        "pull"
+      ],
+      "version>=": "1.3.0"
+    },
+    {
+      "name": "civetweb",
+      "version>=": "1.15"
+    }
+  ],
+  "builtin-baseline": "b0190b451303865b89ced9767caaab140c39f980"
+}

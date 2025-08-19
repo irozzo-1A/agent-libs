@@ -16,7 +16,10 @@
 # ThreadSanitizer option
 option(ENABLE_TSAN "Enable ThreadSanitizer for debugging thread safety issues" OFF)
 
-include(jsoncpp)
+# Find dependencies (will use vcpkg if available, otherwise system/bundled)
+find_package(prometheus-cpp REQUIRED)
+find_package(civetweb REQUIRED)
+find_package(jsoncpp REQUIRED)
 
 set(sources util.cpp test.cpp)
 
@@ -26,7 +29,12 @@ endif()
 
 add_executable(sinsp-example ${sources})
 
-target_link_libraries(sinsp-example sinsp "${JSONCPP_LIB}")
+target_link_libraries(sinsp-example
+	sinsp
+	prometheus-cpp::core
+	prometheus-cpp::pull
+	JsonCpp::JsonCpp
+)
 
 # ThreadSanitizer configuration
 if(ENABLE_TSAN)

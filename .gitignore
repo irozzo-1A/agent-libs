@@ -29,3 +29,7 @@ tags
 third_party
 *.vagrant*
 .DS_Store
+
+# vcpkg
+vcpkg_installed/
+vcpkg_artifacts/

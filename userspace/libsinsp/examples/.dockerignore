@@ -1,0 +1,46 @@
+# Git files
+.git
+.gitignore
+
+# Build artifacts
+build/
+CMakeCache.txt
+CMakeFiles/
+*.o
+*.ko
+*.so
+*.a
+
+# Documentation
+docs/
+*.md
+README*
+
+# Test files
+test/
+tests/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+*.pid
+
+# Coverage files
+*.gcov
+*.gcda
+*.gcno
+
+# Backup files
+*~
+*.bak
+*.backup

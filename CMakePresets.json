@@ -42,6 +42,37 @@
 				"CREATE_TEST_TARGETS": "ON",
 				"SCAP_FILES_SUITE_ENABLE": "OFF"
 			}
+		},
+		{
+			"name": "sinsp-example-docker-build",
+			"displayName": "Default Config",
+			"description": "Default build with 'bundled' libs",
+			"generator": "Unix Makefiles",
+			"binaryDir": "${sourceDir}/build",
+			"cacheVariables": {
+			"CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+			"CMAKE_BUILD_TYPE": "Release",
+			"CMAKE_EXPORT_COMPILE_COMMANDS": true,
+			"USE_BUNDLED_DEPS": "ON",
+			"BUILD_LIBSCAP_MODERN_BPF": "ON",
+			"BUILD_LIBSCAP_GVISOR": "OFF",
+			"BUILD_BPF": "OFF",
+			"BUILD_DRIVER": "OFF",
+			"MODERN_BPF_DEBUG_MODE": "OFF",
+			"BPF_DEBUG": "ON",
+			"CREATE_TEST_TARGETS": "OFF",
+			"ENABLE_LIBSCAP_TESTS": "OFF",
+			"ENABLE_DRIVERS_TESTS": "OFF",
+			"ENABLE_LIBSINSP_E2E_TESTS": "OFF",
+			"USE_BUNDLED_MODERN_BPF": "OFF",
+			"BUILD_SHARED_LIBS": "OFF",
+			"USE_BUNDLED_DRIVER": "OFF",
+			"ENABLE_E2E_TESTS": "OFF",
+			"ENABLE_ENGINE_KMOD": "OFF",
+			"ENABLE_ENGINE_BPF": "OFF",
+			"ENABLE_ENGINE_MODERN_BPF": "ON",
+			"BUILD_LIBSCAP_EXAMPLES": "OFF"
+			}
 		}
 	]
 }

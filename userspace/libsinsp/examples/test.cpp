@@ -35,6 +35,7 @@ limitations under the License.
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <map>
 #include <json/json.h>
 #include <prometheus/counter.h>
 #include <prometheus/gauge.h>
@@ -97,8 +98,7 @@ static std::shared_ptr<sinsp_filter_factory> filter_factory;
 // Prometheus metrics
 static std::shared_ptr<prometheus::Registry> metrics_registry;
 static std::shared_ptr<prometheus::Exposer> metrics_exposer;
-static std::shared_ptr<prometheus::Counter> events_processed_counter;
-static std::shared_ptr<prometheus::Counter> events_dropped_counter;
+static std::map<uint32_t, std::shared_ptr<prometheus::Counter>> events_processed_counters; // Per-worker thread counters with labels
 static std::shared_ptr<prometheus::Gauge> active_buffers_gauge;
 
 // Prometheus metrics aligned to libscap `scap_stats` fields
@@ -131,61 +131,12 @@ sinsp_evt* get_event(sinsp& inspector,
                      sinsp_buffer_t buffer_h = SINSP_INVALID_BUFFER_HANDLE);
 
 struct event_processing_stats {
-	std::atomic<uint64_t> num_events{0};
-	std::atomic<uint64_t> last_events{0};
-	std::atomic<uint64_t> last_ts_ns{0};
-	std::atomic<uint64_t> cpu_total{0};
-	std::atomic<uint64_t> num_samples{0};
-	std::atomic<double> max_throughput{0.0};
-
-	// Default constructor
-	event_processing_stats() = default;
-
-	// Copy constructor
-	event_processing_stats(const event_processing_stats& other) {
-		num_events.store(other.num_events.load());
-		last_events.store(other.last_events.load());
-		last_ts_ns.store(other.last_ts_ns.load());
-		cpu_total.store(other.cpu_total.load());
-		num_samples.store(other.num_samples.load());
-		max_throughput.store(other.max_throughput.load());
-	}
-
-	// Copy assignment operator
-	event_processing_stats& operator=(const event_processing_stats& other) {
-		if(this != &other) {
-			num_events.store(other.num_events.load());
-			last_events.store(other.last_events.load());
-			last_ts_ns.store(other.last_ts_ns.load());
-			cpu_total.store(other.cpu_total.load());
-			num_samples.store(other.num_samples.load());
-			max_throughput.store(other.max_throughput.load());
-		}
-		return *this;
-	}
-
-	// Move constructor
-	event_processing_stats(event_processing_stats&& other) noexcept {
-		num_events.store(other.num_events.load());
-		last_events.store(other.last_events.load());
-		last_ts_ns.store(other.last_ts_ns.load());
-		cpu_total.store(other.cpu_total.load());
-		num_samples.store(other.num_samples.load());
-		max_throughput.store(other.max_throughput.load());
-	}
-
-	// Move assignment operator
-	event_processing_stats& operator=(event_processing_stats&& other) noexcept {
-		if(this != &other) {
-			num_events.store(other.num_events.load());
-			last_events.store(other.last_events.load());
-			last_ts_ns.store(other.last_ts_ns.load());
-			cpu_total.store(other.cpu_total.load());
-			num_samples.store(other.num_samples.load());
-			max_throughput.store(other.max_throughput.load());
-		}
-		return *this;
-	}
+	uint64_t num_events{0};
+	uint64_t last_events{0};
+	uint64_t last_ts_ns{0};
+	uint64_t cpu_total{0};
+	uint64_t num_samples{0};
+	double max_throughput{0.0};
 };
 
 event_processing_stats process_events_loop(
@@ -528,7 +479,7 @@ static void cleanup_resources() {
 }
 
 // Initialize Prometheus metrics
-void initialize_prometheus_metrics(uint16_t metrics_port = 8080) {
+void initialize_prometheus_metrics(uint16_t metrics_port = 8080, uint32_t num_workers = 1) {
 	// Create registry and exposer
 	metrics_registry = std::make_shared<prometheus::Registry>();
 	metrics_exposer =
@@ -537,19 +488,20 @@ void initialize_prometheus_metrics(uint16_t metrics_port = 8080) {
 	// Register the registry with the exposer
 	metrics_exposer->RegisterCollectable(metrics_registry);
 
-	// Create global metrics
+	// Create events processed counter family
 	auto& events_processed_family = prometheus::BuildCounter()
 	                                        .Name("sinsp_events_processed_total")
-	                                        .Help("Total number of events processed")
+	                                        .Help("Total number of events processed per worker")
 	                                        .Register(*metrics_registry);
-	events_processed_counter =
-	        std::shared_ptr<prometheus::Counter>(&events_processed_family.Add({}));
-
-	auto& events_dropped_family = prometheus::BuildCounter()
-	                                      .Name("sinsp_events_dropped_total")
-	                                      .Help("Total number of events dropped")
-	                                      .Register(*metrics_registry);
-	events_dropped_counter = std::shared_ptr<prometheus::Counter>(&events_dropped_family.Add({}));
+	
+	// Create per-worker counters with labels
+	events_processed_counters.clear();
+	for(uint32_t i = 0; i < num_workers; ++i) {
+		auto counter = std::shared_ptr<prometheus::Counter>(
+			&events_processed_family.Add({{"worker", std::to_string(i)}})
+		);
+		events_processed_counters[i] = counter;
+	}
 
 	// Create counters aligned to scap_stats
 	auto& scap_family = prometheus::BuildCounter().Name("sinsp_scap_stat").Help("libscap scap_stats counters").Register(*metrics_registry);
@@ -584,7 +536,7 @@ void initialize_prometheus_metrics(uint16_t metrics_port = 8080) {
 }
 
 // Update buffer metrics
-void update_buffer_metrics(const scap_stats& stats) {
+void update_scap_buffer_metrics(const scap_stats& stats) {
 	if(!metrics_registry) {
 		return;
 	}
@@ -597,9 +549,6 @@ void update_buffer_metrics(const scap_stats& stats) {
 			c->Increment(delta);
 		}
 	};
-
-	inc_to(events_processed_counter, stats.n_evts);
-	inc_to(events_dropped_counter, stats.n_drops);
 
 	inc_to(scap_n_evts, stats.n_evts);
 	inc_to(scap_n_drops, stats.n_drops);
@@ -1057,7 +1006,7 @@ event_processing_stats process_events_loop(
 	event_processing_stats stats;
 	uint64_t last_stats_update_ts = 0;
 
-	while(!g_interrupted.load() && stats.num_events.load() < max_events) {
+	while(!g_interrupted.load() && stats.num_events < max_events) {
 		check_interruption();
 		sinsp_evt* ev = get_event(
 		        inspector,
@@ -1065,61 +1014,41 @@ event_processing_stats process_events_loop(
 		        buffer_h);
 		if(ev != nullptr) {
 			uint64_t ts_ns = ev->get_ts();
-			// Update prometheus stats every second
-			if(ts_ns - last_stats_update_ts > 1'000'000'000 && buffer_h == buffers_num - 1) {
+			// Update prometheus stats every 10 seconds, we appoint the last buffer to update the metrics
+			// because the stats are global and we don't need to update them for each buffer.
+			if(ts_ns - last_stats_update_ts > 10'000'000'000 && buffer_h == metrics_buffer_h) {
 				last_stats_update_ts = ts_ns;
 				scap_stats stats;
 				inspector.get_capture_stats(&stats);
-				update_buffer_metrics(stats);
+				update_scap_buffer_metrics(stats);
 			}
 			sinsp_threadinfo* thread = ev->get_thread_info();
-			stats.num_events.fetch_add(1);
-			uint64_t evt_diff = stats.num_events.load() - stats.last_events.load();
-			if(perftest_mode) {
-#if __linux__
-				// Perftest mode does not print individual events but instead prints a running
-				// throughput every second
-				if(ts_ns - stats.last_ts_ns.load() > 1'000'000'000) {
-					int cpu_usage = get_cpu_usage_percent();
-					stats.cpu_total.fetch_add(cpu_usage);
-					stats.num_samples.fetch_add(1);
-					long double curr_throughput = evt_diff / (long double)1000;
-					std::cout << "Events: " << (stats.num_events.load() - stats.last_events.load())
-					          << " Events/ms: " << curr_throughput << " CPU: " << cpu_usage
-					          << "%                      \r" << std::flush;
-
-
-					if(curr_throughput > stats.max_throughput.load()) {
-						double current = stats.max_throughput.load();
-						while(curr_throughput > current &&
-						      !stats.max_throughput.compare_exchange_weak(current,
-						                                                  curr_throughput)) {
-							// Retry if compare_exchange_weak failed
-						}
-					}
-					stats.last_ts_ns.store(ts_ns);
-					stats.last_events.store(stats.num_events.load());
-#else   // __linux__
-				if(ts_ns - stats.last_ts_ns.load() > 1'000'000'000) {
-					stats.num_samples.fetch_add(1);
-					long double curr_throughput = evt_diff / (long double)1000;
-					std::cout << "Events: " << (stats.num_events.load() - stats.last_events.load())
-					          << " Events/ms: " << curr_throughput << "                      \r"
-					          << std::flush;
-
-					if(curr_throughput > stats.max_throughput.load()) {
-						double current = stats.max_throughput.load();
-						while(curr_throughput > current &&
-						      !stats.max_throughput.compare_exchange_weak(current,
-						                                                  curr_throughput)) {
-							// Retry if compare_exchange_weak failed
-						}
-					}
-					stats.last_ts_ns.store(ts_ns);
-					stats.last_events.store(stats.num_events.load());
-#endif  // __linux__
+			stats.num_events++;
+			
+			if(ts_ns - stats.last_ts_ns > 1'000'000'000) {
+				stats.num_samples++;
+				uint64_t events_diff = stats.num_events - stats.last_events;
+				long double curr_throughput = events_diff / (long double)1000;
+				auto it = events_processed_counters.find(buffer_h);
+				if(it != events_processed_counters.end()) {
+					it->second->Increment(events_diff);
 				}
-			} else if(!thread || all_threads || thread->is_main_thread()) {
+				if(curr_throughput > stats.max_throughput) {
+					stats.max_throughput = curr_throughput;
+				}
+				stats.last_ts_ns = ts_ns;
+				stats.last_events = stats.num_events;
+				if(perftest_mode) {
+					int cpu_usage = get_cpu_usage_percent();
+					stats.cpu_total += cpu_usage;
+					// Perftest mode does not print individual events but instead prints a running
+					// throughput every second
+					std::cout << "Buffer: " << buffer_h << " Events: " << events_diff
+								<< " Events/ms: " << curr_throughput << " CPU: " << cpu_usage
+								<< "%" << std::endl;
+				}
+			}
+			if(!perftest_mode && (!thread || all_threads || thread->is_main_thread())) {
 				dump_func(inspector, ev, buffer_h);
 			}
 		}
@@ -1185,23 +1114,17 @@ event_processing_stats process_events_parallel(
 
 	// Aggregate statistics from all threads
 	for(const auto& stats : thread_stats) {
-		total_stats.num_events.fetch_add(stats.num_events.load());
-		total_stats.cpu_total.fetch_add(stats.cpu_total.load());
-		total_stats.num_samples.fetch_add(stats.num_samples.load());
-		if(stats.max_throughput.load() > total_stats.max_throughput.load()) {
-			double current = total_stats.max_throughput.load();
-			while(stats.max_throughput.load() > current &&
-			      !total_stats.max_throughput.compare_exchange_weak(current,
-			                                                        stats.max_throughput.load())) {
-				// Retry if compare_exchange_weak failed
-			}
+		total_stats.num_events += stats.num_events;
+		total_stats.cpu_total += stats.cpu_total;
+		total_stats.num_samples += stats.num_samples;
+		if(stats.max_throughput > total_stats.max_throughput) {
+			total_stats.max_throughput = stats.max_throughput;
 		}
 	}
 
 	// Calculate average CPU usage
-	if(total_stats.num_samples.load() > 0) {
-		uint64_t current = total_stats.cpu_total.load();
-		total_stats.cpu_total.store(current / num_threads);  // Average across threads
+	if(total_stats.num_samples > 0) {
+		total_stats.cpu_total /= num_threads;  // Average across threads
 	}
 
 	return total_stats;
@@ -1299,7 +1222,7 @@ int main(int argc, char** argv) {
 
 	// Initialize Prometheus metrics if enabled
 	if(metrics_port > 0) {
-		initialize_prometheus_metrics(metrics_port);
+		initialize_prometheus_metrics(metrics_port, num_processing_threads);
 	}
 
 	if(table_mode == "brief") {
@@ -1350,20 +1273,20 @@ int main(int argc, char** argv) {
 	}
 
 	inspector.stop_capture();
-	std::cout << "Retrieved events: " << std::to_string(stats.num_events.load()) << std::endl;
+	std::cout << "Retrieved events: " << std::to_string(stats.num_events) << std::endl;
 	if(num_processing_threads > 1) {
 		std::cout << "Processing threads: " << num_processing_threads << std::endl;
 	}
 	std::cout << "Time spent: " << duration << "ms" << std::endl;
 	if(duration > 0) {
-		std::cout << "Events/ms: " << stats.num_events.load() / (long double)duration << std::endl;
+		std::cout << "Events/ms: " << stats.num_events / (long double)duration << std::endl;
 	}
-	if(stats.max_throughput.load() > 0) {
-		std::cout << "Max throughput observed: " << stats.max_throughput.load() << " events / ms"
+	if(stats.max_throughput > 0) {
+		std::cout << "Max throughput observed: " << stats.max_throughput << " events / ms"
 		          << std::endl;
 	}
-	if(stats.num_samples.load() > 0) {
-		std::cout << "Average CPU usage: " << stats.cpu_total.load() / stats.num_samples.load()
+	if(stats.num_samples > 0) {
+		std::cout << "Average CPU usage: " << stats.cpu_total / stats.num_samples
 		          << "%" << std::endl;
 	}
 

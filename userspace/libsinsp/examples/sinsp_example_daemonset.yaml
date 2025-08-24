@@ -1,0 +1,47 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: sinsp-example-multithread
+  labels:
+    k8s-app: sinsp-example-multithread
+spec:
+  selector:
+    matchLabels:
+      k8s-app: sinsp-example-multithread
+  template:
+    metadata:
+      labels:
+        k8s-app: sinsp-example-multithread
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        prometheus.io/scheme: "http"
+    spec:
+      containers:
+      - name: sinsp-example
+        image: us-docker.pkg.dev/sysdig-artifact-registry-int/gar-docker/iacopo-rozzo/sinsp-example:0.21.0-multithread
+        imagePullPolicy: Always
+        command:
+        - /opt/bin/sinsp-example
+        args:
+        - -m
+        - -M
+        - "8080"
+        - -P
+        - "8"
+        ports:
+          - containerPort: 8080
+            name: metrics
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: kernel-debug
+          mountPath: /sys/kernel/debug
+      imagePullSecrets:
+      - name: regcred
+      volumes:
+      - name: kernel-debug
+        hostPath:
+          path: /sys/kernel/debug
+          type: Directory

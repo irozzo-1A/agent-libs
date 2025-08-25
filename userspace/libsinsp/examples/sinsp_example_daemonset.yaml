@@ -28,8 +28,9 @@ spec:
         - -m
         - -M
         - "8080"
-        - -P
-        - "1"
+        - -c
+        - "0.5"
+        - -t
         ports:
           - containerPort: 8080
             name: metrics

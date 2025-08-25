@@ -20,8 +20,8 @@ spec:
     spec:
       containers:
       - name: sinsp-example
-        image: us-docker.pkg.dev/sysdig-artifact-registry-int/gar-docker/iacopo-rozzo/sinsp-example:0.21.0-multithread
-        imagePullPolicy: Always
+        image: us-docker.pkg.dev/sysdig-artifact-registry-int/gar-docker/iacopo-rozzo/sinsp-example:0.21.2-multithread
+        imagePullPolicy: IfNotPresent
         command:
         - /opt/bin/sinsp-example
         args:
@@ -29,10 +29,17 @@ spec:
         - -M
         - "8080"
         - -P
-        - "8"
+        - "1"
         ports:
           - containerPort: 8080
             name: metrics
+        resources:
+          requests:
+            cpu: "8"
+            memory: 4Gi
+          limits:
+            cpu: "8"
+            memory: 4Gi
         securityContext:
           privileged: true
         volumeMounts:

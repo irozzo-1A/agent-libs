@@ -1030,7 +1030,8 @@ event_processing_stats process_events_loop(
 				stats.num_samples++;
 				uint64_t events_diff = stats.num_events - stats.last_events;
 				long double curr_throughput = events_diff / (long double)1000;
-				auto it = events_processed_counters.find(buffer_h-1);
+				// When not using multiple threads, the buffer_h is 0, so we need to use the max function to get the correct counter.
+				auto it = events_processed_counters.find(std::max(buffer_h-1, 0));
 				if(it != events_processed_counters.end()) {
 					it->second->Increment(events_diff);
 				}

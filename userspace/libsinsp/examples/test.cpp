@@ -1004,6 +1004,8 @@ event_processing_stats process_events_loop(
         uint64_t max_events,
         sinsp_buffer_t buffer_h) {
 	event_processing_stats stats;
+	const uint64_t one_second_ns = 1'000'000'000;
+	const uint64_t ten_seconds_ns = 10 * one_second_ns;
 	uint64_t last_stats_update_ts = 0;
 
 	while(!g_interrupted.load() && stats.num_events < max_events) {
@@ -1014,22 +1016,21 @@ event_processing_stats process_events_loop(
 		        buffer_h);
 		if(ev != nullptr) {
 			uint64_t ts_ns = ev->get_ts();
+			stats.num_events++;
 			// Update prometheus stats every 10 seconds, we appoint the last buffer to update the metrics
 			// because the stats are global and we don't need to update them for each buffer.
-			if(ts_ns - last_stats_update_ts > 10'000'000'000 && buffer_h == metrics_buffer_h) {
+			if(ts_ns - last_stats_update_ts > ten_seconds_ns && buffer_h == metrics_buffer_h) {
 				last_stats_update_ts = ts_ns;
-				scap_stats stats;
-				inspector.get_capture_stats(&stats);
-				update_scap_buffer_metrics(stats);
+				scap_stats scap_stats;
+				inspector.get_capture_stats(&scap_stats);
+				update_scap_buffer_metrics(scap_stats);
 			}
-			sinsp_threadinfo* thread = ev->get_thread_info();
-			stats.num_events++;
-			
-			if(ts_ns - stats.last_ts_ns > 1'000'000'000) {
+			// Update processed sinsp events stats every second
+			if(ts_ns - stats.last_ts_ns > one_second_ns) {
 				stats.num_samples++;
 				uint64_t events_diff = stats.num_events - stats.last_events;
 				long double curr_throughput = events_diff / (long double)1000;
-				auto it = events_processed_counters.find(buffer_h);
+				auto it = events_processed_counters.find(buffer_h-1);
 				if(it != events_processed_counters.end()) {
 					it->second->Increment(events_diff);
 				}
@@ -1043,11 +1044,12 @@ event_processing_stats process_events_loop(
 					stats.cpu_total += cpu_usage;
 					// Perftest mode does not print individual events but instead prints a running
 					// throughput every second
-					std::cout << "Buffer: " << buffer_h << " Events: " << events_diff
+					std::cout << "Worker: " << buffer_h << " Events: " << events_diff
 								<< " Events/ms: " << curr_throughput << " CPU: " << cpu_usage
 								<< "%" << std::endl;
 				}
 			}
+			sinsp_threadinfo* thread = ev->get_thread_info();
 			if(!perftest_mode && (!thread || all_threads || thread->is_main_thread())) {
 				dump_func(inspector, ev, buffer_h);
 			}

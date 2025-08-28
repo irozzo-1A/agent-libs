@@ -1085,7 +1085,6 @@ void sinsp::on_new_entry_from_proc(void* context,
 				tevt.set_fdinfo_ref(nullptr);
 				tevt.set_fd_info(nullptr);
 				sinsp_tinfo->m_lastevent_fd = -1;
-				sinsp_tinfo->set_last_event_data(nullptr);
 
 				sinsp_tinfo->m_filtered_out = !m_filter->run(&tevt);
 			}
@@ -1161,7 +1160,6 @@ void sinsp::on_new_entry_from_proc(void* context,
 			}
 
 			sinsp_tinfo->m_lastevent_fd = tlefd;
-			sinsp_tinfo->set_last_event_data(nullptr);
 		}
 	}
 }
@@ -1401,7 +1399,6 @@ int32_t sinsp::fetch_next_event(sinsp_evt*& evt, sinsp_buffer& buffer) {
 //   check m_next_flush_time_ns and m_last_procrequest_tod
 // TODO(ekoops): m_auto_threads_purging doesn't seem to be mutated after the inspector is opened.
 int32_t sinsp::next(sinsp_evt** puevt, const sinsp_buffer_t buffer_h) {
-	std::unique_lock ul{m_global_next_mutex};
 	*puevt = nullptr;
 
 	auto& buffer = m_buffers.at(buffer_h);

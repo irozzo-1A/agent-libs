@@ -152,7 +152,6 @@ void sinsp_threadinfo::init() {
 	m_lastevent_fd = 0;
 	m_last_latency_entertime = 0;
 	m_latency = 0;
-	m_lastevent_data = NULL;
 	m_parent_loop_detected = false;
 	m_tty = 0;
 	m_cap_inheritable = 0;
@@ -171,9 +170,7 @@ void sinsp_threadinfo::init() {
 }
 
 sinsp_threadinfo::~sinsp_threadinfo() {
-	if(m_lastevent_data) {
-		free(m_lastevent_data);
-	}
+	// Nothing to do here
 }
 
 void sinsp_threadinfo::fix_sockets_coming_from_proc(const std::set<uint16_t>& ipv4_server_ports,

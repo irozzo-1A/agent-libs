@@ -289,10 +289,8 @@ void sinsp_parser::process_event(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 
 void sinsp_parser::event_cleanup(sinsp_evt &evt) {
 	if(evt.get_direction() == SCAP_ED_OUT && evt.get_tinfo() &&
-	   evt.get_tinfo()->get_last_event_data()) {
-		uint8_t *ptr = evt.get_tinfo()->get_last_event_data();
-		free(ptr);
-		evt.get_tinfo()->set_last_event_data(nullptr);
+	   get_thread_event_data(evt.get_tinfo()->m_tid)) {
+		free_thread_event_data(evt.get_tinfo()->m_tid);
 		evt.get_tinfo()->set_lastevent_data_validity(false);
 	}
 }
@@ -539,17 +537,10 @@ void sinsp_parser::store_event(sinsp_evt &evt) {
 	// Copy the data
 	//
 	auto tinfo = evt.get_tinfo();
-	uint8_t *last_event_data = tinfo->get_last_event_data();
-	if(last_event_data != nullptr) {
-		free(last_event_data);
-	}
-	last_event_data = (uint8_t *)malloc(sizeof(uint8_t) * elen);
-	tinfo->set_last_event_data(last_event_data);
-	if(tinfo->get_last_event_data() == nullptr) {
-		throw sinsp_exception("cannot reserve event buffer in sinsp_parser::store_event.");
-		return;
-	}
-	memcpy(tinfo->get_last_event_data(), evt.get_scap_evt(), elen);
+	// Free any existing event data for this thread
+	free_thread_event_data(tinfo->m_tid);
+	// Store the new event data
+	set_thread_event_data(tinfo->m_tid, (uint8_t*)evt.get_scap_evt(), elen);
 	tinfo->set_lastevent_cpuid(evt.get_cpuid());
 
 	if(m_params->m_sinsp_stats_v2 != nullptr) {
@@ -569,7 +560,7 @@ bool sinsp_parser::retrieve_enter_event(sinsp_evt &enter_evt, sinsp_evt &exit_ev
 	// Retrieve the copy of the enter event and initialize it
 	//
 	if(!(exit_evt.get_tinfo()->is_lastevent_data_valid() &&
-	     exit_evt.get_tinfo()->get_last_event_data())) {
+	     get_thread_event_data(exit_evt.get_tinfo()->m_tid))) {
 		//
 		// This happen especially at the beginning of trace files, where events
 		// can be truncated
@@ -580,7 +571,7 @@ bool sinsp_parser::retrieve_enter_event(sinsp_evt &enter_evt, sinsp_evt &exit_ev
 		return false;
 	}
 
-	enter_evt.init_from_raw(exit_evt.get_tinfo()->get_last_event_data(),
+	enter_evt.init_from_raw(get_thread_event_data(exit_evt.get_tinfo()->m_tid),
 	                        exit_evt.get_tinfo()->get_lastevent_cpuid());
 
 	/* The `execveat` syscall is a wrapper of `execve`, when the call
@@ -4138,4 +4129,29 @@ void sinsp_parser::parse_pidfd_getfd_exit(sinsp_evt &evt) const {
 		return;
 	}
 	evt.get_tinfo()->add_fd(fd, targetfd_fdinfo->clone());
+}
+
+uint8_t* sinsp_parser::get_thread_event_data(int64_t tid) const {
+	auto it = m_thread_event_data.find(tid);
+	if (it != m_thread_event_data.end()) {
+		return it->second.get();
+	}
+	
+	return nullptr;
+}
+
+void sinsp_parser::set_thread_event_data(int64_t tid, uint8_t* data, size_t size) {
+	m_thread_event_data[tid] = std::make_unique<uint8_t[]>(size);
+	memcpy(m_thread_event_data[tid].get(), data, size);
+	m_thread_event_data_size[tid] = size;
+}
+
+void sinsp_parser::free_thread_event_data(int64_t tid) {
+	m_thread_event_data.erase(tid);
+	m_thread_event_data_size.erase(tid);
+}
+
+void sinsp_parser::clear_thread_event_data() {
+	m_thread_event_data.clear();
+	m_thread_event_data_size.clear();
 }

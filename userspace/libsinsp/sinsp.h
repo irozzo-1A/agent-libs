@@ -1068,9 +1068,6 @@ public:
 	// next reservable buffer handle. Used internally by reserve_buffer_handle() to take note of the
 	// buffer handle to be returned on the next invocation.
 	sinsp_buffer_t m_next_reservable_buffer_handle;
-
-	// The following mutex is used in next().
-	std::mutex m_global_next_mutex;
 };
 
 /*@}*/

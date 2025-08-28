@@ -646,14 +646,7 @@ public:
 		}
 	}
 
-	inline const uint8_t* get_last_event_data() const { return m_lastevent_data; }
 
-	inline uint8_t* get_last_event_data() { return m_lastevent_data; }
-
-	inline void set_last_event_data(uint8_t* v) {
-		std::unique_lock<std::shared_mutex> lock(m_mutex);
-		m_lastevent_data = v;
-	}
 
 	inline const sinsp_fdtable& get_fdtable() const { return m_fdtable; }
 
@@ -757,8 +750,6 @@ private:
 	const libsinsp::state::base_table*
 	        m_main_fdtable;     // Points to the base fd table of the current main thread
 	std::string m_cwd;          // current working directory
-	uint8_t* m_lastevent_data;  // Used by some event parsers to store the last enter event
-
 	uint16_t m_lastevent_type;
 	uint16_t m_lastevent_cpuid;
 	sinsp_evt::category m_lastevent_category;

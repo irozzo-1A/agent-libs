@@ -80,6 +80,14 @@ public:
 	bool retrieve_enter_event(sinsp_evt& enter_evt, sinsp_evt& exit_evt) const;
 
 	//
+	// Thread event data management (moved from threadinfo)
+	//
+	uint8_t* get_thread_event_data(int64_t tid) const;
+	void set_thread_event_data(int64_t tid, uint8_t* data, size_t size);
+	void free_thread_event_data(int64_t tid);
+	void clear_thread_event_data();
+
+	//
 	// Combine the openat arguments into a full file name
 	//
 	static std::string parse_dirfd(sinsp_evt& evt, std::string_view name, int64_t dirfd);
@@ -228,4 +236,8 @@ private:
 	sinsp_evt& m_tmp_evt_storage;
 
 	bool m_track_connection_status = false;
+
+	// Per-worker thread event data storage (moved from threadinfo to avoid race conditions)
+	std::unordered_map<int64_t, std::unique_ptr<uint8_t[]>> m_thread_event_data;
+	std::unordered_map<int64_t, size_t> m_thread_event_data_size;
 };

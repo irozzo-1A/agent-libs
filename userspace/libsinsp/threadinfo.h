@@ -380,7 +380,8 @@ public:
 				// Its current name is now its old
 				// name. The name might change as a
 				// result of parsing.
-				fdinfo->set_oldname(fdinfo->get_name());
+				// Use atomic operation to avoid race condition
+				fdinfo->update_oldname_from_current();
 				return fdinfo;
 			}
 		}

@@ -202,6 +202,15 @@ public:
 	}
 
 	/*!
+	  \brief Update the old name from the current name atomically.
+	  This method avoids race conditions when updating the old name.
+	*/
+	inline void update_oldname_from_current() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_oldname = m_name;
+	}
+
+	/*!
 	  \brief Return the flags of this FD.
 	*/
 	inline uint32_t get_flags() const {

@@ -74,8 +74,8 @@ public:
 	                             fdtable_dyn_fields);
 	void clear();
 
-	const threadinfo_map_t::ptr_t& add_thread(std::unique_ptr<sinsp_threadinfo> threadinfo,
-	                                          bool from_scap_proctable);
+	threadinfo_map_t::ptr_t add_thread(std::unique_ptr<sinsp_threadinfo> threadinfo,
+	                                   bool from_scap_proctable);
 	sinsp_threadinfo* find_new_reaper(sinsp_threadinfo*);
 	void remove_thread(int64_t tid);
 	// Returns true if the table is actually scanned
@@ -129,10 +129,10 @@ public:
 	  @throws a sinsp_exception containing the error string is thrown in case
 	   of failure.
 	*/
-	const threadinfo_map_t::ptr_t& get_thread_ref(int64_t tid,
-	                                              bool query_os_if_not_found = false,
-	                                              bool lookup_only = true,
-	                                              bool main_thread = false);
+	threadinfo_map_t::ptr_t get_thread_ref(int64_t tid,
+	                                       bool query_os_if_not_found = false,
+	                                       bool lookup_only = true,
+	                                       bool main_thread = false);
 
 	void set_max_thread_table_size(uint32_t value);
 
@@ -142,7 +142,7 @@ public:
 	//       just for lookup reason. In that case, m_lastaccess_ts is not updated
 	//       and m_last_tinfo is not set.
 	//
-	const threadinfo_map_t::ptr_t& find_thread(int64_t tid, bool lookup_only);
+	threadinfo_map_t::ptr_t find_thread(int64_t tid, bool lookup_only);
 
 	void dump_threads_to_file(scap_dumper_t* dumper);
 
@@ -270,12 +270,12 @@ public:
 		return nullptr;
 	}
 
-	const std::shared_ptr<thread_group_info>& get_thread_group_info(const int64_t pid) const {
+	std::shared_ptr<thread_group_info> get_thread_group_info(const int64_t pid) const {
 		std::shared_lock<std::shared_mutex> lock(m_thread_groups_mutex);
 		if(const auto tgroup = m_thread_groups.find(pid); tgroup != m_thread_groups.end()) {
 			return tgroup->second;
 		}
-		return m_nullptr_tginfo_ret;
+		return nullptr;
 	}
 
 	void set_thread_group_info(const int64_t pid,
@@ -325,9 +325,9 @@ public:
 
 	  \note tinfo must be a reference to a thread that is already present in the thread table.
 	*/
-	sinsp_fdinfo* add_thread_fd_from_scap(sinsp_threadinfo& tinfo,
-	                                      const scap_fdinfo& fdinfo,
-	                                      bool resolve_hostname_and_port);
+	std::shared_ptr<sinsp_fdinfo> add_thread_fd_from_scap(sinsp_threadinfo& tinfo,
+	                                                      const scap_fdinfo& fdinfo,
+	                                                      bool resolve_hostname_and_port);
 
 	// Thread hierarchy operations (eliminates cross-class deadlocks)
 	sinsp_threadinfo* get_parent_thread(int64_t tid);
@@ -395,11 +395,6 @@ private:
 	int32_t m_max_n_proc_socket_lookups = -1;
 	uint64_t m_proc_lookup_period = 0;
 	uint64_t m_last_proc_lookup_period_start = 0;
-
-	const std::shared_ptr<sinsp_threadinfo>
-	        m_nullptr_tinfo_ret;  // needed for returning a reference
-	const std::shared_ptr<thread_group_info>
-	        m_nullptr_tginfo_ret;  // needed for returning a reference
 
 	// State table API field accessors to foreign keys written by plugins.
 	std::map<std::string, libsinsp::state::dynamic_struct::field_accessor<std::string>>

@@ -24,7 +24,7 @@ limitations under the License.
 
 typedef uint16_t sinsp_buffer_t;
 class sinsp_parser;
-class sinsp_parser_shared_params;
+struct sinsp_parser_shared_params;
 
 extern sinsp_buffer_t SINSP_INVALID_BUFFER_HANDLE;
 
@@ -136,4 +136,7 @@ public:
 	             const scap_buffer_t& scap_buffer_h,
 	             sinsp* inspector,
 	             const std::shared_ptr<sinsp_parser_shared_params>& parser_ctor_params);
+
+	// Set the last event type for a specific thread
+	void set_lastevent_type(int64_t tid, uint16_t event_type);
 };

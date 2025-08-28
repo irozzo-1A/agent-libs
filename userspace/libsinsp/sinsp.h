@@ -81,19 +81,14 @@ limitations under the License.
 #include <libsinsp/timestamper.h>
 #include <libsinsp/sinsp_buffer.h>
 
-#include <list>
-#include <map>
 #include <memory>
-#include <queue>
 #include <string>
-#include <unordered_set>
 #include <vector>
-#include <queue>
 
 #define ONE_SECOND_IN_NS 1000000000LL
 
 class sinsp_parser;
-class sinsp_parser_shared_params;
+struct sinsp_parser_shared_params;
 class sinsp_filter;
 class sinsp_plugin;
 class sinsp_plugin_manager;
@@ -861,7 +856,7 @@ private:
 	//       just for lookup reason. In that case, m_lastaccess_ts is not updated
 	//       and m_last_tinfo is not set.
 	//
-	inline const threadinfo_map_t::ptr_t& find_thread(int64_t tid, bool lookup_only) {
+	inline threadinfo_map_t::ptr_t find_thread(int64_t tid, bool lookup_only) {
 		return m_thread_manager->find_thread(tid, lookup_only);
 	}
 

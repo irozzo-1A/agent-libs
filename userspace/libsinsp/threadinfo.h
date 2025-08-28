@@ -366,16 +366,16 @@ public:
 	  \return Pointer to the FD information, or NULL if the given FD doesn't
 	   exist
 	*/
-	inline sinsp_fdinfo* get_fd(int64_t fd) {
+	inline std::shared_ptr<sinsp_fdinfo> get_fd(int64_t fd) {
 		if(fd < 0) {
 			return NULL;
 		}
 
 		std::shared_lock<std::shared_mutex> lock(m_mutex);
-		sinsp_fdtable* fdt = get_fd_table_unlocked();
+		auto fdt = get_fd_table_unlocked();
 
 		if(fdt) {
-			sinsp_fdinfo* fdinfo = fdt->find(fd);
+			auto fdinfo = fdt->find(fd);
 			if(fdinfo) {
 				// Its current name is now its old
 				// name. The name might change as a
@@ -579,15 +579,16 @@ public:
 	                      ///< saving to a capture
 
 	//
-	// State for multi-event processing
+	// State for multi-event processing (atomic for lock-free operations)
 	//
-	int64_t m_lastevent_fd;    ///< The FD os the last event used by this thread.
-	uint64_t m_lastevent_ts;   ///< timestamp of the last event for this thread.
-	uint64_t m_prevevent_ts;   ///< timestamp of the event before the last for this thread.
-	uint64_t m_lastaccess_ts;  ///< The last time this thread was looked up. Used when cleaning up
-	                           ///< the table.
-	uint64_t m_clone_ts;       ///< When the clone that started this process happened.
-	uint64_t m_lastexec_ts;    ///< The last time exec was called
+	std::atomic<int64_t> m_lastevent_fd{-1};  ///< The FD of the last event used by this thread.
+	std::atomic<uint64_t> m_lastevent_ts{0};  ///< timestamp of the last event for this thread.
+	std::atomic<uint64_t> m_prevevent_ts{
+	        0};  ///< timestamp of the event before the last for this thread.
+	std::atomic<uint64_t> m_lastaccess_ts{0};  ///< The last time this thread was looked up. Used
+	                                           ///< when cleaning up the table.
+	std::atomic<uint64_t> m_clone_ts{0};     ///< When the clone that started this process happened.
+	std::atomic<uint64_t> m_lastexec_ts{0};  ///< The last time exec was called
 
 	size_t args_len() const;
 	size_t env_len() const;
@@ -610,12 +611,12 @@ public:
 	/* Note that `fd_table` should be shared with the main thread only if `PPM_CL_CLONE_FILES`
 	 * is specified. Today we always specify `PPM_CL_CLONE_FILES` for all threads.
 	 */
-	inline sinsp_fdtable* get_fd_table() {
+	inline std::shared_ptr<sinsp_fdtable> get_fd_table() {
 		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		return get_fd_table_unlocked();
 	}
 
-	inline const sinsp_fdtable* get_fd_table() const {
+	inline std::shared_ptr<const sinsp_fdtable> get_fd_table() const {
 		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		return get_fd_table_unlocked();
 	}
@@ -627,8 +628,9 @@ public:
 	          bool notify_group_update);
 	void fix_sockets_coming_from_proc(const std::set<uint16_t>& ipv4_server_ports,
 	                                  bool resolve_hostname_and_port);
-	sinsp_fdinfo* add_fd(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo);
-	sinsp_fdinfo* add_fd_from_scap(const scap_fdinfo& fdi, bool resolve_hostname_and_port);
+	std::shared_ptr<sinsp_fdinfo> add_fd(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo);
+	std::shared_ptr<sinsp_fdinfo> add_fd_from_scap(const scap_fdinfo& fdi,
+	                                               bool resolve_hostname_and_port);
 	void remove_fd(int64_t fd);
 	void update_cwd(std::string_view cwd);
 	void set_args(const char* args, size_t len);
@@ -639,7 +641,6 @@ public:
 	void set_cgroups(const cgroups_t& cgroups);
 	bool is_lastevent_data_valid() const;
 	inline void set_lastevent_data_validity(bool isvalid) {
-		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		if(isvalid) {
 			m_lastevent_cpuid = (uint16_t)1;
 		} else {
@@ -647,34 +648,65 @@ public:
 		}
 	}
 
+	inline std::shared_ptr<const sinsp_fdtable> get_fdtable() const { return m_fdtable; }
 
+	inline std::shared_ptr<sinsp_fdtable> get_fdtable() { return m_fdtable; }
 
-	inline const sinsp_fdtable& get_fdtable() const { return m_fdtable; }
-
-	inline sinsp_fdtable& get_fdtable() { return m_fdtable; }
-
-	inline uint16_t get_lastevent_type() const { return m_lastevent_type; }
-
-	inline void set_lastevent_type(uint16_t v) {
+	// Thread-safe fdtable operations
+	inline void clear_fdtable() {
 		std::unique_lock<std::shared_mutex> lock(m_mutex);
-		m_lastevent_type = v;
+		if(m_fdtable) {
+			m_fdtable->clear();
+		}
+	}
+
+	inline void set_fdtable_tid(uint64_t tid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		if(m_fdtable) {
+			m_fdtable->set_tid(tid);
+		}
+	}
+
+	inline std::shared_ptr<sinsp_fdinfo> add_fd_to_table(int64_t fd,
+	                                                     std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		if(m_fdtable) {
+			return m_fdtable->add(fd, std::move(fdinfo));
+		}
+		return nullptr;
+	}
+
+	inline void reset_fdtable_cache() {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		if(m_fdtable) {
+			m_fdtable->reset_cache();
+		}
+	}
+
+	inline const std::shared_ptr<libsinsp::state::dynamic_struct::field_infos>&
+	get_fdtable_dynamic_fields() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		static const std::shared_ptr<libsinsp::state::dynamic_struct::field_infos> empty;
+		return m_fdtable ? m_fdtable->dynamic_fields() : empty;
+	}
+
+	inline void set_fdtable_dynamic_fields(
+	        const std::shared_ptr<libsinsp::state::dynamic_struct::field_infos>& fields) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		if(m_fdtable) {
+			m_fdtable->set_dynamic_fields(fields);
+		}
 	}
 
 	inline uint16_t get_lastevent_cpuid() const { return m_lastevent_cpuid; }
 
-	inline void set_lastevent_cpuid(uint16_t v) {
-		std::unique_lock<std::shared_mutex> lock(m_mutex);
-		m_lastevent_cpuid = v;
-	}
+	inline void set_lastevent_cpuid(uint16_t v) { m_lastevent_cpuid = v; }
 
 	inline const sinsp_evt::category& get_lastevent_category() const {
 		return m_lastevent_category;
 	}
 
-	inline sinsp_evt::category& get_lastevent_category() {
-		std::unique_lock<std::shared_mutex> lock(m_mutex);
-		return m_lastevent_category;
-	}
+	inline sinsp_evt::category& get_lastevent_category() { return m_lastevent_category; }
 
 	sinsp_threadinfo* get_oldest_matching_ancestor(
 	        const std::function<int64_t(sinsp_threadinfo*)>& get_thread_id,
@@ -684,6 +716,8 @@ public:
 	        const std::function<int64_t(sinsp_threadinfo*)>& get_thread_id,
 	        const std::function<std::string(sinsp_threadinfo*)>& get_field_str,
 	        bool is_virtual_id = false);
+
+
 
 	inline void update_main_fdtable() {
 		std::unique_lock<std::shared_mutex> lock(m_mutex);
@@ -725,21 +759,21 @@ private:
 	                  std::string& rem) const;
 
 	// Private version for use by methods that already hold the lock
-	inline sinsp_fdtable* get_fd_table_unlocked() {
+	inline std::shared_ptr<sinsp_fdtable> get_fd_table_unlocked() {
 		if(!(m_flags & PPM_CL_CLONE_FILES)) {
-			return &m_fdtable;
+			return m_fdtable;
 		} else {
 			sinsp_threadinfo* root = get_main_thread_unlocked();
-			return (root == nullptr) ? nullptr : &(root->get_fdtable());
+			return (root == nullptr) ? nullptr : root->get_fdtable();
 		}
 	}
 
-	inline const sinsp_fdtable* get_fd_table_unlocked() const {
+	inline std::shared_ptr<const sinsp_fdtable> get_fd_table_unlocked() const {
 		if(!(m_flags & PPM_CL_CLONE_FILES)) {
-			return &m_fdtable;
+			return m_fdtable;
 		} else {
 			const sinsp_threadinfo* root = get_main_thread_unlocked();
-			return (root == nullptr) ? nullptr : &(root->get_fdtable());
+			return (root == nullptr) ? nullptr : root->get_fdtable();
 		}
 	}
 
@@ -747,11 +781,10 @@ private:
 	// Parameters that can't be accessed directly because they could be in the
 	// parent thread info
 	//
-	sinsp_fdtable m_fdtable;  // The fd table of this thread
+	std::shared_ptr<sinsp_fdtable> m_fdtable;  // The fd table of this thread
 	const libsinsp::state::base_table*
-	        m_main_fdtable;     // Points to the base fd table of the current main thread
-	std::string m_cwd;          // current working directory
-	uint16_t m_lastevent_type;
+	        m_main_fdtable;  // Points to the base fd table of the current main thread
+	std::string m_cwd;       // current working directory
 	uint16_t m_lastevent_cpuid;
 	sinsp_evt::category m_lastevent_category;
 	mutable bool m_parent_loop_detected;

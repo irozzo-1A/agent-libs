@@ -260,7 +260,7 @@ void sinsp_thread_manager::create_thread_dependencies(
  * 2. We are doing a proc scan with a callback or without. (`from_scap_proctable==true`)
  * 3. We are trying to obtain thread info from /proc through `get_thread_ref`
  */
-const std::shared_ptr<sinsp_threadinfo>& sinsp_thread_manager::add_thread(
+std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::add_thread(
         std::unique_ptr<sinsp_threadinfo> threadinfo,
         bool from_scap_proctable) {
 	/* We have no more space */
@@ -283,7 +283,7 @@ const std::shared_ptr<sinsp_threadinfo>& sinsp_thread_manager::add_thread(
 				m_sinsp_stats_v2->m_n_drops_full_threadtable++;
 			}
 
-			return m_nullptr_tinfo_ret;
+			return nullptr;
 		}
 	}
 
@@ -297,7 +297,7 @@ const std::shared_ptr<sinsp_threadinfo>& sinsp_thread_manager::add_thread(
 		throw sinsp_exception("adding entry with incompatible dynamic defs to thread table");
 	}
 
-	if(tinfo_shared_ptr->get_fdtable().dynamic_fields() != m_fdtable_dyn_fields) {
+	if(tinfo_shared_ptr->get_fdtable_dynamic_fields() != m_fdtable_dyn_fields) {
 		throw sinsp_exception(
 		        "adding entry with incompatible dynamic defs to of file descriptor sub-table");
 	}
@@ -420,8 +420,8 @@ void sinsp_thread_manager::remove_main_thread_fdtable(sinsp_threadinfo* main_thr
 		return;
 	}
 
-	sinsp_fdtable* fd_table_ptr = main_thread->get_fd_table();
-	if(fd_table_ptr == nullptr) {
+	auto fd_table_ptr = main_thread->get_fd_table();
+	if(!fd_table_ptr) {
 		return;
 	}
 
@@ -617,8 +617,8 @@ void sinsp_thread_manager::fix_sockets_coming_from_proc(const bool resolve_hostn
 }
 
 void sinsp_thread_manager::clear_thread_pointers(sinsp_threadinfo& tinfo) {
-	sinsp_fdtable* fdt = tinfo.get_fd_table();
-	if(fdt != NULL) {
+	auto fdt = tinfo.get_fd_table();
+	if(fdt) {
 		fdt->reset_cache();
 	}
 }
@@ -699,10 +699,11 @@ void sinsp_thread_manager::thread_to_scap(sinsp_threadinfo& tinfo, scap_threadin
 	sctinfo->filtered_out = tinfo.m_filtered_out;
 }
 
-sinsp_fdinfo* sinsp_thread_manager::add_thread_fd_from_scap(sinsp_threadinfo& tinfo,
-                                                            const scap_fdinfo& fdinfo,
-                                                            const bool resolve_hostname_and_port) {
-	const auto newfdinfo = tinfo.add_fd_from_scap(fdinfo, resolve_hostname_and_port);
+std::shared_ptr<sinsp_fdinfo> sinsp_thread_manager::add_thread_fd_from_scap(
+        sinsp_threadinfo& tinfo,
+        const scap_fdinfo& fdinfo,
+        const bool resolve_hostname_and_port) {
+	auto newfdinfo = tinfo.add_fd_from_scap(fdinfo, resolve_hostname_and_port);
 	if(!newfdinfo) {
 		return nullptr;
 	}
@@ -854,8 +855,8 @@ void sinsp_thread_manager::dump_threads_to_file(scap_dumper_t* dumper) {
 			//
 			// Add the FDs
 			//
-			sinsp_fdtable* fd_table_ptr = tinfo.get_fd_table();
-			if(fd_table_ptr == NULL) {
+			auto fd_table_ptr = tinfo.get_fd_table();
+			if(!fd_table_ptr) {
 				return false;
 			}
 
@@ -908,7 +909,7 @@ void sinsp_thread_manager::dump_threads_to_file(scap_dumper_t* dumper) {
 }
 
 /* `lookup_only==true` means that we don't fill the `m_last_tinfo` field */
-const threadinfo_map_t::ptr_t& sinsp_thread_manager::find_thread(int64_t tid, bool lookup_only) {
+threadinfo_map_t::ptr_t sinsp_thread_manager::find_thread(int64_t tid, bool lookup_only) {
 	//
 	// Try looking up in our simple cache
 	//
@@ -926,42 +927,38 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::find_thread(int64_t tid, bo
 		}
 	}
 
-	//
-	// Caching failed, do a real lookup
-	//
-	const threadinfo_map_t::ptr_t* thr = nullptr;
+	threadinfo_map_t::ptr_t thr = nullptr;
 	{
 		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
-		thr = &m_threadtable.get_ref(tid);
+		thr = m_threadtable.get_ref(tid);
 	}
 
-	if(*thr) {
+	if(thr) {
 		if(m_sinsp_stats_v2 != nullptr) {
 			m_sinsp_stats_v2->m_n_noncached_thread_lookups++;
 		}
 		if(!lookup_only) {
 			std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
 			m_last_tid = tid;
-			m_last_tinfo = *thr;
-			(*thr)->m_lastaccess_ts = m_timestamper.get_cached_ts();
+			m_last_tinfo = thr;
+			thr->m_lastaccess_ts = m_timestamper.get_cached_ts();
 		}
-		(*thr)->update_main_fdtable();
-		return *thr;
+		thr->update_main_fdtable();
+		return thr;
 	} else {
 		if(m_sinsp_stats_v2 != nullptr) {
 			m_sinsp_stats_v2->m_n_failed_thread_lookups++;
 		}
 
-		return m_nullptr_tinfo_ret;
+		return nullptr;
 	}
 }
 
-const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(
-        const int64_t tid,
-        const bool query_os_if_not_found,
-        const bool lookup_only,
-        const bool main_thread) {
-	const auto& sinsp_proc = find_thread(tid, lookup_only);
+threadinfo_map_t::ptr_t sinsp_thread_manager::get_thread_ref(const int64_t tid,
+                                                             const bool query_os_if_not_found,
+                                                             const bool lookup_only,
+                                                             const bool main_thread) {
+	threadinfo_map_t::ptr_t sinsp_proc = find_thread(tid, lookup_only);
 
 	if(!sinsp_proc && query_os_if_not_found) {
 		// Check table size limit before proceeding
@@ -971,7 +968,7 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(
 			std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
 			std::unique_lock<std::mutex> config_lock(m_config_mutex);
 			if(m_threadtable.size() >= m_max_thread_table_size && tid != m_sinsp_pid) {
-				return m_nullptr_tinfo_ret;
+				return nullptr;
 			}
 		}
 
@@ -984,7 +981,7 @@ const threadinfo_map_t::ptr_t& sinsp_thread_manager::get_thread_ref(
 			                          ": sinsp::scap_t* is uninitialized",
 			                          __func__,
 			                          tid);
-			return m_nullptr_tinfo_ret;
+			return nullptr;
 		}
 
 		scap_threadinfo scap_proc{};

@@ -68,7 +68,6 @@ sinsp_evt::sinsp_evt():
         m_cpuid(0),
         m_evtnum(0),
         m_flags(EF_NONE),
-        m_params_loaded(false),
         m_info(NULL),
         m_paramstr_storage(1024),
         m_resolved_paramstr_storage(1024),
@@ -511,7 +510,7 @@ int sinsp_evt::render_fd_json(Json::Value *ret,
 	}
 
 	if(fd >= 0) {
-		sinsp_fdinfo *fdinfo = tinfo->get_fd(fd);
+		auto fdinfo = tinfo->get_fd(fd);
 		if(fdinfo) {
 			char tch = fdinfo->get_typechar();
 			char ipprotoch = 0;
@@ -584,7 +583,7 @@ char *sinsp_evt::render_fd(int64_t fd, const char **resolved_str, sinsp_evt::par
 	}
 
 	if(fd >= 0) {
-		sinsp_fdinfo *fdinfo = tinfo->get_fd(fd);
+		auto fdinfo = tinfo->get_fd(fd);
 		if(fdinfo) {
 			char tch = fdinfo->get_typechar();
 			char ipprotoch = 0;
@@ -1119,7 +1118,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 			int64_t fd = 0;
 			memcpy(&fd, param_data + pos, sizeof(uint64_t));
 
-			sinsp_fdinfo *fdinfo = tinfo->get_fd(fd);
+			auto fdinfo = tinfo->get_fd(fd);
 			if(fdinfo) {
 				tch = fdinfo->get_typechar();
 			} else {

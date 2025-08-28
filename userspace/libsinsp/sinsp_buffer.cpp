@@ -39,3 +39,7 @@ sinsp_buffer::sinsp_buffer(const sinsp_buffer_t& sinsp_buffer_h,
         m_replay_scap_cpuid{0},  // TODO: determine if this is correctly initialized
         m_replay_scap_flags{0}   // TODO: determine if this is correctly initialized
 {}
+
+void sinsp_buffer::set_lastevent_type(int64_t tid, uint16_t event_type) {
+	m_parser->set_lastevent_type(tid, event_type);
+}

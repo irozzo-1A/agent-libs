@@ -257,8 +257,8 @@ libs_state_counters::libs_state_counters(const std::shared_ptr<sinsp_stats_v2>& 
 		threadinfo_map_t* threadtable = thread_manager->get_threads();
 		if(threadtable != nullptr) {
 			threadtable->loop([this](sinsp_threadinfo& tinfo) {
-				sinsp_fdtable* fdtable = tinfo.get_fd_table();
-				if(fdtable != nullptr) {
+				auto fdtable = tinfo.get_fd_table();
+				if(fdtable) {
 					this->m_n_fds += fdtable->size();
 				}
 				return true;

@@ -1620,8 +1620,8 @@ bool sinsp_filter_check_fd::extract_fd(sinsp_evt *evt) {
 		} else {
 			m_fdinfo = evt->get_fd_info();
 
-			if(m_fdinfo == NULL && m_tinfo->m_lastevent_fd != -1) {
-				m_fdinfo = m_tinfo->get_fd(m_tinfo->m_lastevent_fd);
+			if(m_fdinfo == NULL && m_tinfo->m_lastevent_fd.load() != -1) {
+				m_fdinfo = m_tinfo->get_fd(m_tinfo->m_lastevent_fd.load());
 			}
 		}
 		// We'll check if fd is null below

@@ -366,7 +366,7 @@ uint8_t* sinsp_filter_check_fspath::extract_single(sinsp_evt* evt,
 				sdir = "";
 				auto fdinfo = evt->get_fd_info();
 				if(fdinfo != nullptr) {
-					m_tstr = evt->get_fd_info()->m_name;
+					m_tstr = fdinfo->m_name;
 				} else {
 					m_tstr = "<UNKNOWN>";
 				}

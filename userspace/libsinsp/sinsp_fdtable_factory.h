@@ -29,5 +29,7 @@ public:
 	explicit sinsp_fdtable_factory(const std::shared_ptr<sinsp_fdtable::ctor_params>& params):
 	        m_params{params} {}
 
-	sinsp_fdtable create() const { return sinsp_fdtable{m_params}; }
+	std::unique_ptr<sinsp_fdtable> create() const {
+		return std::make_unique<sinsp_fdtable>(m_params);
+	}
 };

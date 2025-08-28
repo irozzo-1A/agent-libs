@@ -40,8 +40,8 @@ static void copy_ipv6_address(uint32_t (&dest)[4], const uint32_t (&src)[4]) {
 sinsp_threadinfo::sinsp_threadinfo(const std::shared_ptr<ctor_params>& params):
         table_entry(params->thread_manager_dyn_fields),
         m_params{params},
-        m_fdtable{params->fdtable_factory.create()},
-        m_main_fdtable(m_fdtable.table_ptr()),
+        m_fdtable{std::shared_ptr<sinsp_fdtable>(params->fdtable_factory.create().release())},
+        m_main_fdtable(m_fdtable->table_ptr()),
         m_args_table_adapter("args", m_args),
         m_env_table_adapter("env", m_env),
         m_cgroups_table_adapter("cgroups", m_cgroups) {
@@ -132,12 +132,11 @@ void sinsp_threadinfo::init() {
 	set_lastevent_data_validity(false);
 	m_reaper_tid = -1;
 	m_not_expired_children = 0;
-	m_lastevent_type = -1;
-	m_lastevent_ts = 0;
-	m_prevevent_ts = 0;
-	m_lastaccess_ts = 0;
-	m_clone_ts = 0;
-	m_lastexec_ts = 0;
+	m_lastevent_ts.store(0);
+	m_prevevent_ts.store(0);
+	m_lastaccess_ts.store(0);
+	m_clone_ts.store(0);
+	m_lastexec_ts.store(0);
 	m_lastevent_category.m_category = EC_UNKNOWN;
 	m_flags = PPM_CL_NAME_CHANGED;
 	m_fdlimit = -1;
@@ -149,7 +148,7 @@ void sinsp_threadinfo::init() {
 	m_vtid = -1;
 	m_vpid = -1;
 	m_pidns_init_start_ts = 0;
-	m_lastevent_fd = 0;
+	m_lastevent_fd.store(0);
 	m_last_latency_entertime = 0;
 	m_latency = 0;
 	m_parent_loop_detected = false;
@@ -169,13 +168,11 @@ void sinsp_threadinfo::init() {
 	m_exe_from_memfd = false;
 }
 
-sinsp_threadinfo::~sinsp_threadinfo() {
-	// Nothing to do here
-}
+sinsp_threadinfo::~sinsp_threadinfo() = default;
 
 void sinsp_threadinfo::fix_sockets_coming_from_proc(const std::set<uint16_t>& ipv4_server_ports,
                                                     const bool resolve_hostname_and_port) {
-	m_fdtable.loop([resolve_hostname_and_port, &ipv4_server_ports](int64_t fd, sinsp_fdinfo& fdi) {
+	m_fdtable->loop([resolve_hostname_and_port, &ipv4_server_ports](int64_t fd, sinsp_fdinfo& fdi) {
 		if(fdi.m_type != SCAP_FD_IPV4_SOCK) {
 			return true;
 		}
@@ -200,8 +197,9 @@ void sinsp_threadinfo::fix_sockets_coming_from_proc(const std::set<uint16_t>& ip
 	});
 }
 
-sinsp_fdinfo* sinsp_threadinfo::add_fd_from_scap(const scap_fdinfo& fdi,
-                                                 const bool resolve_hostname_and_port) {
+std::shared_ptr<sinsp_fdinfo> sinsp_threadinfo::add_fd_from_scap(
+        const scap_fdinfo& fdi,
+        const bool resolve_hostname_and_port) {
 	std::unique_lock<std::shared_mutex> lock(m_mutex);
 
 	auto newfdi = m_params->fdinfo_factory.create();
@@ -252,8 +250,8 @@ sinsp_fdinfo* sinsp_threadinfo::add_fd_from_scap(const scap_fdinfo& fdi,
 				newfdi->m_flags |= sinsp_fdinfo::FLAGS_SOCKET_CONNECTED;
 			}
 			m_params->network_interfaces.update_fd(*newfdi);
-			newfdi->m_name =
-			        ipv4tuple_to_string(newfdi->m_sockinfo.m_ipv4info, resolve_hostname_and_port);
+			newfdi->set_name(
+			        ipv4tuple_to_string(newfdi->m_sockinfo.m_ipv4info, resolve_hostname_and_port));
 		} else {
 			copy_ipv6_address(newfdi->m_sockinfo.m_ipv6info.m_fields.m_sip.m_b,
 			                  fdi.info.ipv6info.sip);
@@ -265,8 +263,8 @@ sinsp_fdinfo* sinsp_threadinfo::add_fd_from_scap(const scap_fdinfo& fdi,
 			if(fdi.info.ipv6info.l4proto == SCAP_L4_TCP) {
 				newfdi->m_flags |= sinsp_fdinfo::FLAGS_SOCKET_CONNECTED;
 			}
-			newfdi->m_name =
-			        ipv6tuple_to_string(newfdi->m_sockinfo.m_ipv6info, resolve_hostname_and_port);
+			newfdi->set_name(
+			        ipv6tuple_to_string(newfdi->m_sockinfo.m_ipv6info, resolve_hostname_and_port));
 		}
 		break;
 	case SCAP_FD_IPV6_SERVSOCK:
@@ -314,8 +312,8 @@ sinsp_fdinfo* sinsp_threadinfo::add_fd_from_scap(const scap_fdinfo& fdi,
 		return nullptr;
 	}
 
-	// Add the FD to the table and returns a pointer to it.
-	return m_fdtable.add(fdi.fd, std::move(newfdi));
+	// Add the FD to the table and returns a shared pointer to it.
+	return m_fdtable->add_shared(fdi.fd, std::move(newfdi));
 }
 
 void sinsp_threadinfo::init(const scap_threadinfo& pinfo,
@@ -352,8 +350,8 @@ void sinsp_threadinfo::init(const scap_threadinfo& pinfo,
 	m_flags |= pinfo.flags;
 	m_flags |= PPM_CL_ACTIVE;  // Assume that all the threads coming from /proc are real, active
 	                           // threads
-	m_fdtable.clear();
-	m_fdtable.set_tid(m_tid);
+	m_fdtable->clear();
+	m_fdtable->set_tid(m_tid);
 	m_fdlimit = pinfo.fdlimit;
 
 	m_cap_permitted = pinfo.cap_permitted;
@@ -374,8 +372,8 @@ void sinsp_threadinfo::init(const scap_threadinfo& pinfo,
 	m_vtid = pinfo.vtid;
 	m_vpid = pinfo.vpid;
 	m_pidns_init_start_ts = pinfo.pidns_init_start_ts;
-	m_clone_ts = pinfo.clone_ts;
-	m_lastexec_ts = 0;
+	m_clone_ts.store(pinfo.clone_ts);
+	m_lastexec_ts.store(0);
 	m_tty = pinfo.tty;
 
 	set_cgroups(pinfo.cgroups.path, pinfo.cgroups.len);
@@ -711,19 +709,20 @@ sinsp_threadinfo* sinsp_threadinfo::get_ancestor_process(uint32_t n) {
 	return m_params->thread_manager->get_ancestor_process(m_tid, n);
 }
 
-sinsp_fdinfo* sinsp_threadinfo::add_fd(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
+std::shared_ptr<sinsp_fdinfo> sinsp_threadinfo::add_fd(int64_t fd,
+                                                       std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
 	std::unique_lock<std::shared_mutex> lock(m_mutex);
 
-	sinsp_fdtable* fd_table_ptr = get_fd_table_unlocked();
-	if(fd_table_ptr == NULL) {
-		return NULL;
+	auto fd_table_ptr = get_fd_table_unlocked();
+	if(!fd_table_ptr) {
+		return nullptr;
 	}
-	auto* res = fd_table_ptr->add(fd, std::move(fdinfo));
+	auto res = fd_table_ptr->add_shared(fd, std::move(fdinfo));
 
 	//
 	// Update the last event fd. It's needed by the filtering engine
 	//
-	m_lastevent_fd = fd;
+	m_lastevent_fd.store(fd);
 
 	return res;
 }
@@ -731,8 +730,8 @@ sinsp_fdinfo* sinsp_threadinfo::add_fd(int64_t fd, std::shared_ptr<sinsp_fdinfo>
 void sinsp_threadinfo::remove_fd(int64_t fd) {
 	std::unique_lock<std::shared_mutex> lock(m_mutex);
 
-	sinsp_fdtable* fd_table_ptr = get_fd_table_unlocked();
-	if(fd_table_ptr == NULL) {
+	auto fd_table_ptr = get_fd_table_unlocked();
+	if(!fd_table_ptr) {
 		return;
 	}
 	fd_table_ptr->erase(fd);
@@ -741,8 +740,8 @@ void sinsp_threadinfo::remove_fd(int64_t fd) {
 bool sinsp_threadinfo::loop_fds(sinsp_fdtable::fdtable_const_visitor_t visitor) {
 	std::shared_lock<std::shared_mutex> lock(m_mutex);
 
-	sinsp_fdtable* fdt = get_fd_table_unlocked();
-	if(fdt == NULL) {
+	auto fdt = get_fd_table_unlocked();
+	if(!fdt) {
 		return false;
 	}
 
@@ -752,8 +751,8 @@ bool sinsp_threadinfo::loop_fds(sinsp_fdtable::fdtable_const_visitor_t visitor) 
 bool sinsp_threadinfo::is_bound_to_port(uint16_t number) const {
 	std::shared_lock<std::shared_mutex> lock(m_mutex);
 
-	const sinsp_fdtable* fdt = get_fd_table_unlocked();
-	if(fdt == NULL) {
+	auto fdt = get_fd_table_unlocked();
+	if(!fdt) {
 		return false;
 	}
 
@@ -781,8 +780,8 @@ bool sinsp_threadinfo::is_bound_to_port(uint16_t number) const {
 bool sinsp_threadinfo::uses_client_port(uint16_t number) const {
 	std::shared_lock<std::shared_mutex> lock(m_mutex);
 
-	const sinsp_fdtable* fdt = get_fd_table_unlocked();
-	if(fdt == NULL) {
+	auto fdt = get_fd_table_unlocked();
+	if(!fdt) {
 		return false;
 	}
 
@@ -921,8 +920,8 @@ double sinsp_threadinfo::get_fd_usage_pct_d() {
 uint64_t sinsp_threadinfo::get_fd_opencount() const {
 	std::shared_lock<std::shared_mutex> lock(m_mutex);
 
-	const sinsp_fdtable* fdt = get_fd_table_unlocked();
-	if(fdt == NULL) {
+	auto fdt = get_fd_table_unlocked();
+	if(!fdt) {
 		return 0;
 	}
 
@@ -1063,7 +1062,7 @@ void sinsp_threadinfo::populate_args(std::string& args, const sinsp_threadinfo* 
 }
 
 std::string sinsp_threadinfo::get_path_for_dir_fd(int64_t dir_fd) {
-	sinsp_fdinfo* dir_fdinfo = get_fd(dir_fd);
+	auto dir_fdinfo = get_fd(dir_fd);
 	if(!dir_fdinfo || dir_fdinfo->m_name.empty()) {
 #ifndef _WIN32  // we will have to implement this for Windows
 		// Sad day; we don't have the directory in the tinfo's fd cache.

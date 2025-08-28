@@ -44,7 +44,7 @@ public:
 		if(tinfo->dynamic_fields() == nullptr) {
 			tinfo->set_dynamic_fields(m_params->thread_manager_dyn_fields);
 		}
-		tinfo->get_fdtable().set_dynamic_fields(m_fdtable_dyn_fields);
+		tinfo->set_fdtable_dynamic_fields(m_fdtable_dyn_fields);
 		return tinfo;
 	}
 

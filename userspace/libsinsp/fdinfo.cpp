@@ -217,10 +217,12 @@ std::string sinsp_fdinfo::tostring_clean() const {
 }
 
 void sinsp_fdinfo::add_filename_raw(std::string_view rawpath) {
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
 	m_name_raw = std::string(rawpath);
 }
 
 void sinsp_fdinfo::add_filename(std::string_view fullpath) {
+	std::unique_lock<std::shared_mutex> lock(m_mutex);
 	m_name = std::string(fullpath);
 }
 

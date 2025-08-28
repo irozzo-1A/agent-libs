@@ -446,11 +446,11 @@ public:
 
 	  \note For events that are not I/O related, get_fd_info() returns NULL.
 	*/
-	inline const sinsp_fdinfo* get_fd_info() const { return m_fdinfo; }
+	inline const std::shared_ptr<sinsp_fdinfo> get_fd_info() const { return m_fdinfo; }
 
-	inline sinsp_fdinfo* get_fd_info() { return m_fdinfo; }
+	inline std::shared_ptr<sinsp_fdinfo> get_fd_info() { return m_fdinfo; }
 
-	inline void set_fd_info(sinsp_fdinfo* v) { m_fdinfo = v; }
+	inline void set_fd_info(std::shared_ptr<sinsp_fdinfo> v) { m_fdinfo = std::move(v); }
 
 	inline bool fdinfo_name_changed() const { return m_fdinfo_name_changed; }
 
@@ -581,7 +581,6 @@ public:
 		m_info = &(m_event_info_table[m_pevt->type]);
 		m_tinfo_ref.reset();
 		m_tinfo = NULL;
-		m_fdinfo_ref.reset();
 		m_fdinfo = NULL;
 		m_fdinfo_name_changed = false;
 		m_iosize = 0;
@@ -594,7 +593,6 @@ public:
 		m_info = &(m_event_info_table[m_pevt->type]);
 		m_tinfo_ref.reset();
 		m_tinfo = NULL;
-		m_fdinfo_ref.reset();
 		m_fdinfo = NULL;
 		m_fdinfo_name_changed = false;
 		m_iosize = 0;
@@ -673,12 +671,6 @@ public:
 	inline sinsp_threadinfo* get_tinfo() { return m_tinfo; }
 
 	inline void set_tinfo(sinsp_threadinfo* v) { m_tinfo = v; }
-
-	inline std::shared_ptr<const sinsp_fdinfo> get_fdinfo_ref() const { return m_fdinfo_ref; }
-
-	inline const std::shared_ptr<sinsp_fdinfo>& get_fdinfo_ref() { return m_fdinfo_ref; }
-
-	inline void set_fdinfo_ref(const std::shared_ptr<sinsp_fdinfo>& v) { m_fdinfo_ref = v; }
 
 	inline const std::vector<char>& get_paramstr_storage() const { return m_paramstr_storage; }
 
@@ -790,7 +782,6 @@ private:
 	uint64_t m_evtnum;
 	uint32_t m_flags;
 	uint32_t m_dump_flags;
-	bool m_params_loaded;
 	const struct ppm_event_info* m_info;
 	std::vector<sinsp_evt_param> m_params;
 
@@ -801,7 +792,7 @@ private:
 	// info it should either be null, or point to the same place as m_tinfo
 	std::shared_ptr<sinsp_threadinfo> m_tinfo_ref;
 	sinsp_threadinfo* m_tinfo;
-	sinsp_fdinfo* m_fdinfo;
+	std::shared_ptr<sinsp_fdinfo> m_fdinfo;
 
 	// If true, then the associated fdinfo changed names as a part
 	// of parsing this event.
@@ -813,7 +804,6 @@ private:
 	bool m_filtered_out;
 	const struct ppm_event_info* m_event_info_table;
 
-	std::shared_ptr<sinsp_fdinfo> m_fdinfo_ref;
 	// For some exit events, the "path" argument from the
 	// corresponding enter event is stored here.
 	std::unordered_map<std::string, std::string> m_enter_path_param;

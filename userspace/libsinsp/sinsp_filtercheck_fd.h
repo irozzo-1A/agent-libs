@@ -98,7 +98,7 @@ private:
 	bool compare_domain(sinsp_evt* evt);
 
 	sinsp_threadinfo* m_tinfo;
-	sinsp_fdinfo* m_fdinfo;
+	std::shared_ptr<sinsp_fdinfo> m_fdinfo;
 	std::string m_tstr;
 	uint8_t m_tcstr[2];
 	int64_t m_argid;

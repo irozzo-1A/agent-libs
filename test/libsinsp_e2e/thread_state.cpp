@@ -56,7 +56,7 @@ protected:
 		for(uint32_t i = 0; i < m_max; i++) {
 			int64_t ppid = (i == 0 ? 1 : m_threads[i - 1]->m_tid);
 			sinsp_threadinfo* tinfo = m_threads[i];
-			tinfo->m_lastevent_fd = 0;
+			tinfo->m_lastevent_fd.store(0);
 			tinfo->set_parent_loop_detected(false);
 			tinfo->m_ptid = ppid;
 		}
@@ -67,7 +67,7 @@ protected:
 		auto result = finished.get_future();
 
 		sinsp_threadinfo::visitor_func_t visitor = [](sinsp_threadinfo* tinfo) {
-			tinfo->m_lastevent_fd = 1;
+			tinfo->m_lastevent_fd.store(1);
 			return true;
 		};
 
@@ -115,7 +115,7 @@ protected:
 		EXPECT_EQ(m_threads[test_idx]->parent_loop_detected(), loop_detected);
 		for(uint32_t i = 0; i < m_max; i++) {
 			SCOPED_TRACE("i=" + to_string(i));
-			EXPECT_EQ(m_threads[i]->m_lastevent_fd, visited[i]);
+			EXPECT_EQ(m_threads[i]->m_lastevent_fd.load(), visited[i]);
 		}
 	}
 

@@ -32,8 +32,8 @@ sinsp_fdtable::sinsp_fdtable(const std::shared_ptr<ctor_params>& params):
 	reset_cache();
 }
 
-inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::find_ref(int64_t fd) {
-	std::unique_lock<std::shared_mutex> lock(m_mutex);
+inline std::shared_ptr<sinsp_fdinfo> sinsp_fdtable::find_ref(int64_t fd) {
+	std::shared_lock<std::shared_mutex> lock(m_mutex);
 
 	//
 	// Try looking up in our simple cache
@@ -54,20 +54,20 @@ inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::find_ref(int64_t fd) 
 		if(m_params->m_sinsp_stats_v2) {
 			m_params->m_sinsp_stats_v2->m_n_failed_fd_lookups++;
 		}
-		return m_nullptr_ret;
+		return nullptr;
 	} else {
 		if(m_params->m_sinsp_stats_v2 != nullptr) {
 			m_params->m_sinsp_stats_v2->m_n_noncached_fd_lookups++;
 		}
 
-		m_last_accessed_fd = fd;
-		m_last_accessed_fdinfo = fdit->second;
-		lookup_device(*m_last_accessed_fdinfo);
-		return m_last_accessed_fdinfo;
+		// Don't update the cache here to avoid race conditions
+		// The cache is only updated during writes (add_ref)
+		lookup_device(*fdit->second);
+		return fdit->second;
 	}
 }
 
-inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::add_ref(
+inline std::shared_ptr<sinsp_fdinfo> sinsp_fdtable::add_ref(
         int64_t fd,
         std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
 	std::unique_lock<std::shared_mutex> lock(m_mutex);
@@ -96,7 +96,11 @@ inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::add_ref(
 			m_params->m_sinsp_stats_v2->m_n_added_fds++;
 		}
 
-		return m_table.emplace(fd, std::move(fdinfo)).first->second;
+		auto result = m_table.emplace(fd, std::move(fdinfo));
+		// Update cache with the new entry
+		m_last_accessed_fd = fd;
+		m_last_accessed_fdinfo = result.first->second;
+		return result.first->second;
 	}
 
 	// the fd is already in the table. This can happen if:
@@ -113,6 +117,10 @@ inline const std::shared_ptr<sinsp_fdinfo>& sinsp_fdtable::add_ref(
 
 	// Replace the fd as a struct copy.
 	m_last_accessed_fd = -1;
+
+	// Replace the fd as a struct copy.
+	// Directly assign the new fdinfo, which will automatically decrease
+	// the reference count of the old one without explicitly calling reset()
 	it->second = std::move(fdinfo);
 	return it->second;
 }
@@ -149,6 +157,10 @@ bool sinsp_fdtable::erase(int64_t fd) {
 
 void sinsp_fdtable::clear() {
 	std::unique_lock<std::shared_mutex> lock(m_mutex);
+	// Clear the cache first to avoid any potential race conditions
+	m_last_accessed_fd = -1;
+	m_last_accessed_fdinfo.reset();
+	// Clear the table - this will properly destroy all shared_ptr objects
 	m_table.clear();
 }
 
@@ -179,12 +191,18 @@ void sinsp_fdtable::lookup_device(sinsp_fdinfo& fdi) const {
 #endif  // _WIN32
 }
 
-sinsp_fdinfo* sinsp_fdtable::find(const int64_t fd) {
-	return find_ref(fd).get();
+std::shared_ptr<sinsp_fdinfo> sinsp_fdtable::find(const int64_t fd) {
+	return find_ref(fd);
 }
 
-sinsp_fdinfo* sinsp_fdtable::add(const int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
-	return add_ref(fd, std::move(fdinfo)).get();
+std::shared_ptr<sinsp_fdinfo> sinsp_fdtable::add(const int64_t fd,
+                                                 std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
+	return add_ref(fd, std::move(fdinfo));
+}
+
+std::shared_ptr<sinsp_fdinfo> sinsp_fdtable::add_shared(const int64_t fd,
+                                                        std::shared_ptr<sinsp_fdinfo>&& fdinfo) {
+	return add_ref(fd, std::move(fdinfo));
 }
 
 std::unique_ptr<libsinsp::state::table_entry> sinsp_fdtable::new_entry() const {

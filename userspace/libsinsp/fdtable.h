@@ -56,11 +56,15 @@ public:
 
 	explicit sinsp_fdtable(const std::shared_ptr<ctor_params>& params);
 
-	sinsp_fdinfo* find(int64_t fd);
+	std::shared_ptr<sinsp_fdinfo> find(int64_t fd);
 
-	sinsp_fdinfo* add(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo);
+	std::shared_ptr<sinsp_fdinfo> add(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo);
+	std::shared_ptr<sinsp_fdinfo> add_shared(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo);
+
+
 
 	inline bool const_loop(const fdtable_const_visitor_t callback) const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		for(auto it = m_table.begin(); it != m_table.end(); ++it) {
 			if(!callback(it->first, *it->second)) {
 				return false;
@@ -70,6 +74,7 @@ public:
 	}
 
 	inline bool loop(const fdtable_visitor_t callback) {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		for(auto it = m_table.begin(); it != m_table.end(); ++it) {
 			if(!callback(it->first, *it->second)) {
 				return false;
@@ -100,7 +105,13 @@ public:
 	std::unique_ptr<libsinsp::state::table_entry> new_entry() const override;
 
 	bool foreach_entry(std::function<bool(libsinsp::state::table_entry& e)> pred) override {
-		return loop([&pred](int64_t i, sinsp_fdinfo& e) { return pred(e); });
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		for(auto it = m_table.begin(); it != m_table.end(); ++it) {
+			if(!pred(*it->second)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	std::shared_ptr<libsinsp::state::table_entry> get_entry(const int64_t& key) override;
@@ -146,7 +157,6 @@ private:
 	}
 
 	inline void lookup_device(sinsp_fdinfo& fdi) const;
-	const std::shared_ptr<sinsp_fdinfo>& find_ref(int64_t fd);
-	const std::shared_ptr<sinsp_fdinfo>& add_ref(int64_t fd,
-	                                             std::shared_ptr<sinsp_fdinfo>&& fdinfo);
+	std::shared_ptr<sinsp_fdinfo> find_ref(int64_t fd);
+	std::shared_ptr<sinsp_fdinfo> add_ref(int64_t fd, std::shared_ptr<sinsp_fdinfo>&& fdinfo);
 };

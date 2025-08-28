@@ -280,10 +280,10 @@ void sinsp_parser::process_event(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 	// Check to see if the name changed as a side-effect of
 	// parsing this event. Try to avoid the overhead of a string
 	// compare for every event.
-	if(evt.get_fd_info()) {
-		// Use thread-safe getter methods instead of direct member access
-		evt.set_fdinfo_name_changed(evt.get_fd_info()->get_name() !=
-		                            evt.get_fd_info()->get_oldname());
+	if(auto tinfo = evt.get_tinfo()) {
+		if(auto fdinfo = tinfo->get_fd(evt.get_fd_num())) {
+			evt.set_fdinfo_name_changed(fdinfo->get_name() != fdinfo->get_oldname());
+		}
 	}
 }
 
@@ -370,7 +370,6 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 		                            : sinsp_no_event_source_name);
 	}
 
-	evt.set_fdinfo_ref(nullptr);
 	evt.set_fd_info(nullptr);
 	evt.set_errorcode(0);
 
@@ -422,14 +421,14 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 	// todo!: at the end of we work we should remove the enter/exit distinction and ideally we
 	//   should set the fdinfos directly here and return if they are not present.
 	if(PPME_IS_ENTER(etype)) {
-		set_thread_lastevent_fd(tinfo->m_tid, -1);
-		tinfo->set_lastevent_type(etype);
+		tinfo->m_lastevent_fd.store(-1);
+		set_lastevent_type(tinfo->m_tid, etype);
 
 		if(evt.uses_fd()) {
 			const int fd_location = get_enter_event_fd_location(static_cast<ppm_event_code>(etype));
 			ASSERT(evt.get_param_info(fd_location)->type == PT_FD);
 			int64_t fd = evt.get_param(fd_location)->as<int64_t>();
-			set_thread_lastevent_fd(tinfo->m_tid, fd);
+			tinfo->m_lastevent_fd.store(fd);
 			evt.set_fd_info(tinfo->get_fd(fd));
 		}
 
@@ -451,16 +450,16 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 	}
 
 	if(etype == PPME_SYSCALL_EXECVE_19_X &&
-	   tinfo->get_lastevent_type() == PPME_SYSCALL_EXECVEAT_E) {
+	   get_lastevent_type(tinfo->m_tid) == PPME_SYSCALL_EXECVEAT_E) {
 		tinfo->set_lastevent_data_validity(true);
-	} else if(etype == tinfo->get_lastevent_type() + 1) {
+	} else if(etype == get_lastevent_type(tinfo->m_tid) + 1) {
 		tinfo->set_lastevent_data_validity(true);
 	} else {
 		tinfo->set_lastevent_data_validity(false);
 		// We cannot be sure that the lastevent_fd is something valid, it could be the socket of
 		// the previous `socket` syscall, or it could be something completely unrelated, for now
 		// we don't trust it in any case.
-		tinfo->m_lastevent_fd = -1;
+		tinfo->m_lastevent_fd.store(-1);
 	}
 
 	//
@@ -483,22 +482,22 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 	// sendmmsg and recvmmsg send all data in the exit event, fd included.
 	if((etype == PPME_SOCKET_SENDMMSG_X || etype == PPME_SOCKET_RECVMMSG_X) &&
 	   evt.get_num_params() > 0) {
-		tinfo->m_lastevent_fd = evt.get_param(1)->as<int64_t>();
+		tinfo->m_lastevent_fd.store(evt.get_param(1)->as<int64_t>());
 	}
 
 	// todo!: this should become the unique logic when we'll disable the enter events.
-	if(tinfo->m_lastevent_fd == -1) {
+	if(tinfo->m_lastevent_fd.load() == -1) {
 		if(const int fd_location = get_exit_event_fd_location(static_cast<ppm_event_code>(etype));
 		   fd_location != -1) {
 			const auto fd_param = evt.get_param(fd_location);
 			// It is possible that the fd_param is empty
 			if(!fd_param->empty()) {
-				tinfo->m_lastevent_fd = fd_param->as<int64_t>();
+				tinfo->m_lastevent_fd.store(fd_param->as<int64_t>());
 			}
 		}
 	}
 
-	const auto fdinfo = tinfo->get_fd(tinfo->m_lastevent_fd);
+	const auto fdinfo = tinfo->get_fd(tinfo->m_lastevent_fd.load());
 	evt.set_fd_info(fdinfo);
 	if(fdinfo == nullptr) {
 		return false;
@@ -530,7 +529,7 @@ void sinsp_parser::store_event(sinsp_evt &evt) {
 	const uint32_t elen = scap_event_getlen(evt.get_scap_evt());
 
 	// Add safety checks to prevent corrupted size values
-	if(elen == 0 || elen > SP_EVT_BUF_SIZE || elen > 1024*1024) { // 1MB max reasonable size
+	if(elen == 0 || elen > SP_EVT_BUF_SIZE || elen > 1024 * 1024) {  // 1MB max reasonable size
 		ASSERT(false);
 		return;
 	}
@@ -542,7 +541,9 @@ void sinsp_parser::store_event(sinsp_evt &evt) {
 	// Free any existing event data for this thread
 	free_thread_event_data(tinfo->m_tid);
 	// Store the new event data
-	set_thread_event_data(tinfo->m_tid, reinterpret_cast<const uint8_t*>(evt.get_scap_evt()), elen);
+	set_thread_event_data(tinfo->m_tid,
+	                      reinterpret_cast<const uint8_t *>(evt.get_scap_evt()),
+	                      elen);
 	tinfo->set_lastevent_cpuid(evt.get_cpuid());
 
 	if(m_params->m_sinsp_stats_v2 != nullptr) {
@@ -766,7 +767,7 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt &evt,
 	/* Initialise last exec time to zero (can be overridden in the case of a
 	 * thread clone)
 	 */
-	child_tinfo->m_lastexec_ts = 0;
+	child_tinfo->m_lastexec_ts.store(0);
 
 	/* flags */
 	child_tinfo->m_flags = flags;
@@ -788,22 +789,22 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt &evt,
 			 * syscalls like open and pipe2 that can override PPM_CL_CLONE_FILES with the O_CLOEXEC
 			 * flag
 			 */
-			sinsp_fdtable *fd_table_ptr = caller_tinfo->get_fd_table();
-			if(fd_table_ptr != nullptr) {
-				child_tinfo->get_fdtable().clear();
-				child_tinfo->get_fdtable().set_tid(child_tinfo->m_tid);
+			auto fd_table_ptr = caller_tinfo->get_fd_table();
+			if(fd_table_ptr) {
+				child_tinfo->clear_fdtable();
+				child_tinfo->set_fdtable_tid(child_tinfo->m_tid);
 				fd_table_ptr->const_loop([&child_tinfo](int64_t fd, const sinsp_fdinfo &info) {
 					/* Track down that those are cloned fds */
 					auto newinfo = info.clone();
 					newinfo->set_is_cloned();
-					child_tinfo->get_fdtable().add(fd, std::move(newinfo));
+					child_tinfo->add_fd_to_table(fd, std::move(newinfo));
 					return true;
 				});
 
 				/* It's important to reset the cache of the child thread, to prevent it from
 				 * referring to an element in the parent's table.
 				 */
-				child_tinfo->get_fdtable().reset_cache();
+				child_tinfo->reset_fdtable_cache();
 			} else {
 				/* This should never happen */
 				libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
@@ -846,7 +847,7 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt &evt,
 		/* If we are a new thread we keep the same lastexec time of the main thread
 		 * If the caller is invalid we are re-initializing this value to 0 again.
 		 */
-		child_tinfo->m_lastexec_ts = caller_tinfo->m_lastexec_ts;
+		child_tinfo->m_lastexec_ts.store(caller_tinfo->m_lastexec_ts.load());
 	}
 
 	/* We are not in a container otherwise we should never reach this point.
@@ -1047,7 +1048,7 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt &evt, sinsp_parser_verdict &
 	/* Initialise last exec time to zero (can be overridden in the case of a
 	 * thread clone)
 	 */
-	child_tinfo->m_lastexec_ts = 0;
+	child_tinfo->m_lastexec_ts.store(0);
 
 	/* tid */
 	child_tinfo->m_tid = child_tid;
@@ -1223,24 +1224,24 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt &evt, sinsp_parser_verdict &
 			 * syscalls like open and pipe2 that can override PPM_CL_CLONE_FILES with the O_CLOEXEC
 			 * flag
 			 */
-			sinsp_fdtable *fd_table_ptr = lookup_tinfo->get_fd_table();
-			if(fd_table_ptr != nullptr) {
-				child_tinfo->get_fdtable().clear();
-				child_tinfo->get_fdtable().set_tid(child_tinfo->m_tid);
+			auto fd_table_ptr = lookup_tinfo->get_fd_table();
+			if(fd_table_ptr) {
+				child_tinfo->clear_fdtable();
+				child_tinfo->set_fdtable_tid(child_tinfo->m_tid);
 				fd_table_ptr->const_loop([&child_tinfo](int64_t fd, const sinsp_fdinfo &info) {
 					/* Track down that those are cloned fds.
 					 * This flag `FLAGS_IS_CLONED` seems to be never used...
 					 */
 					auto newinfo = info.clone();
 					newinfo->set_is_cloned();
-					child_tinfo->get_fdtable().add(fd, std::move(newinfo));
+					child_tinfo->add_fd_to_table(fd, std::move(newinfo));
 					return true;
 				});
 
 				/* It's important to reset the cache of the child thread, to prevent it from
 				 * referring to an element in the parent's table.
 				 */
-				child_tinfo->get_fdtable().reset_cache();
+				child_tinfo->reset_fdtable_cache();
 			} else {
 				/* This should never happen */
 				libsinsp_logger()->format(sinsp_logger::SEV_DEBUG,
@@ -1255,7 +1256,7 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt &evt, sinsp_parser_verdict &
 			child_tinfo->m_env = lookup_tinfo->m_env;
 		} else {
 			/* If we are a new thread we keep the same lastexec time of the main thread */
-			child_tinfo->m_lastexec_ts = lookup_tinfo->m_lastexec_ts;
+			child_tinfo->m_lastexec_ts.store(lookup_tinfo->m_lastexec_ts.load());
 		}
 	} else {
 		/* Please note that here `comm`, `exe`, ... could be different from our thread, so this is
@@ -1997,7 +1998,7 @@ void sinsp_parser::parse_fchmod_fchown_exit(sinsp_evt &evt) {
 
 	ASSERT(evt.get_param_info(1)->type == PT_FD);
 	const int64_t fd = evt.get_param(1)->as<int64_t>();
-	evt.get_tinfo()->m_lastevent_fd = fd;
+	evt.get_tinfo()->m_lastevent_fd.store(fd);
 	evt.set_fd_info(evt.get_tinfo()->get_fd(fd));
 }
 
@@ -2241,7 +2242,7 @@ void sinsp_parser::parse_bind_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict
 	//
 	// Update the name of this socket
 	//
-	evt.get_fd_info()->m_name = evt.get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE);
+	evt.get_fd_info()->set_name(evt.get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE));
 
 	//
 	// If there's a listener, add a callback to later invoke it.
@@ -2319,13 +2320,13 @@ void sinsp_parser::parse_connect_enter(sinsp_evt &evt) const {
 		                             (uint32_t)evt.get_paramstr_storage().size(),
 		                             m_params->m_hostname_and_port_resolution_enabled);
 
-		fdinfo->m_name = &evt.get_paramstr_storage()[0];
+		fdinfo->set_name(&evt.get_paramstr_storage()[0]);
 		return;
 	}
 	default: {
 		// Add the friendly name to the fd info.
 		const char *parstr;
-		fdinfo->m_name = evt.get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE);
+		fdinfo->set_name(evt.get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE));
 		break;
 	}
 	}
@@ -2383,9 +2384,10 @@ inline void sinsp_parser::fill_client_socket_info(sinsp_evt &evt,
 			changed = set_ipv4_addresses_and_ports(*evt.get_fd_info(), packed_data, overwrite_dest);
 		}
 
-		if(changed && evt.get_fd_info()->is_role_server() && evt.get_fd_info()->is_udp_socket()) {
+		if(auto fdinfo = evt.get_fd_info();
+		   changed && fdinfo && fdinfo->is_role_server() && fdinfo->is_udp_socket()) {
 			// connect done by a udp server, swap the addresses
-			swap_addresses(*evt.get_fd_info());
+			swap_addresses(*fdinfo);
 		}
 
 		//
@@ -2397,7 +2399,7 @@ inline void sinsp_parser::fill_client_socket_info(sinsp_evt &evt,
 		                             (uint32_t)evt.get_paramstr_storage().size(),
 		                             can_resolve_hostname_and_port);
 
-		evt.get_fd_info()->m_name = &evt.get_paramstr_storage()[0];
+		evt.get_fd_info()->set_name(&evt.get_paramstr_storage()[0]);
 	} else {
 		if(!evt.get_fd_info()->is_unix_socket()) {
 			//
@@ -2412,7 +2414,7 @@ inline void sinsp_parser::fill_client_socket_info(sinsp_evt &evt,
 		//
 		// Add the friendly name to the fd info
 		//
-		evt.get_fd_info()->m_name = evt.get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE);
+		evt.get_fd_info()->set_name(evt.get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE));
 
 		//
 		// Update the FD with this tuple
@@ -2443,8 +2445,8 @@ void sinsp_parser::parse_connect_exit(sinsp_evt &evt, sinsp_parser_verdict &verd
 			// Accept failure. Do nothing.
 			return;
 		}
-		evt.get_tinfo()->m_lastevent_fd = fd;
-		evt.set_fd_info(evt.get_tinfo()->get_fd(evt.get_tinfo()->m_lastevent_fd));
+		evt.get_tinfo()->m_lastevent_fd.store(fd);
+		evt.set_fd_info(evt.get_tinfo()->get_fd(evt.get_tinfo()->m_lastevent_fd.load()));
 		if(evt.get_fd_info() == nullptr) {
 			// Ok this is a completely new fd; we probably lost too many events.
 			// Bye.
@@ -2513,7 +2515,7 @@ void sinsp_parser::parse_accept_exit(sinsp_evt &evt, sinsp_parser_verdict &verdi
 	}
 
 	// Update the last event fd. It's needed by the filtering engine.
-	evt.get_tinfo()->m_lastevent_fd = fd;
+	evt.get_tinfo()->m_lastevent_fd.store(fd);
 
 	// Extract the address.
 	const sinsp_evt_param *parinfo = evt.get_param(1);
@@ -2556,7 +2558,7 @@ void sinsp_parser::parse_accept_exit(sinsp_evt &evt, sinsp_parser_verdict &verdi
 	}
 
 	const char *parstr;
-	fdi->m_name = evt.get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE);
+	fdi->set_name(evt.get_param_as_str(1, &parstr, sinsp_evt::PF_SIMPLE));
 	fdi->m_flags = 0;
 
 	// If there's a listener, add a callback to later invoke it.
@@ -2565,11 +2567,11 @@ void sinsp_parser::parse_accept_exit(sinsp_evt &evt, sinsp_parser_verdict &verdi
 		        [fd, packed_data, fdi](sinsp_observer *observer, sinsp_evt *evt) {
 			        auto fd_info = evt->get_fd_info();
 			        if(fd_info == nullptr) {
-				        fd_info = fdi.get();
+				        fd_info = fdi;
 			        }
 			        // TODO(ekoops): remove const_cast once we adapt sinsp_observer::on_accept API
 			        //   to accept const pointers/references.
-			        observer->on_accept(evt, fd, const_cast<uint8_t *>(packed_data), fd_info);
+			        observer->on_accept(evt, fd, const_cast<uint8_t *>(packed_data), fd_info.get());
 		        });
 	}
 
@@ -2610,7 +2612,7 @@ void sinsp_parser::parse_close_exit(sinsp_evt &evt, sinsp_parser_verdict &verdic
 
 		erase_fd_params eparams;
 		eparams.m_fd = evt.get_tinfo()->m_lastevent_fd;
-		eparams.m_fdinfo = evt.get_fd_info();
+		eparams.m_fdinfo = evt.get_fd_info().get();
 		eparams.m_remove_from_table = true;
 		eparams.m_tinfo = evt.get_tinfo();
 		erase_fd(eparams, verdict);
@@ -2938,7 +2940,7 @@ bool sinsp_parser::update_fd(sinsp_evt &evt, const sinsp_evt_param &parinfo) con
 	} else if(family == PPM_AF_UNIX) {
 		evt.get_fd_info()->m_type = SCAP_FD_UNIX_SOCK;
 		evt.get_fd_info()->set_unix_info(packed_data);
-		evt.get_fd_info()->m_name = ((char *)packed_data) + 17;
+		evt.get_fd_info()->set_name(((char *)packed_data) + 17);
 
 		return true;
 	}
@@ -3018,7 +3020,7 @@ struct ppm_cmsghdr {
 	        ((char *)(cmsg)) + offsetof(ppm_cmsghdr, field), \
 	        sizeof((cmsg)->field)))
 
-#define PPM_CMSG_ALIGN(len) (((len) + sizeof(size_t) - 1) & (size_t) ~(sizeof(size_t) - 1))
+#define PPM_CMSG_ALIGN(len) (((len) + sizeof(size_t) - 1) & (size_t)~(sizeof(size_t) - 1))
 
 #define PPM_CMSG_NXTHDR(msg_control, msg_controllen, cmsg) \
 	ppm_cmsg_nxthdr(msg_control, msg_controllen, cmsg)
@@ -3177,10 +3179,10 @@ void sinsp_parser::parse_rw_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 						        (uint32_t)evt.get_paramstr_storage().size(),
 						        m_params->m_hostname_and_port_resolution_enabled);
 
-						evt.get_fd_info()->m_name = &evt.get_paramstr_storage()[0];
+						evt.get_fd_info()->set_name(&evt.get_paramstr_storage()[0]);
 					} else {
-						evt.get_fd_info()->m_name =
-						        evt.get_param_as_str(tupleparam, &parstr, sinsp_evt::PF_SIMPLE);
+						evt.get_fd_info()->set_name(
+						        evt.get_param_as_str(tupleparam, &parstr, sinsp_evt::PF_SIMPLE));
 					}
 				}
 			}
@@ -3209,7 +3211,7 @@ void sinsp_parser::parse_rw_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 					        observer->on_read(evt,
 					                          tid,
 					                          evt->get_tinfo()->m_lastevent_fd,
-					                          evt->get_fd_info(),
+					                          evt->get_fd_info().get(),
 					                          data,
 					                          (uint32_t)retval,
 					                          data_len);
@@ -3266,12 +3268,12 @@ void sinsp_parser::parse_rw_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 						        (uint32_t)evt.get_paramstr_storage().size(),
 						        m_params->m_hostname_and_port_resolution_enabled);
 
-						evt.get_fd_info()->m_name = &evt.get_paramstr_storage()[0];
+						evt.get_fd_info()->set_name(&evt.get_paramstr_storage()[0]);
 					} else {
 						const char *parstr;
-						evt.get_fd_info()->m_name = evt.get_param_as_str(SOCKET_TUPLE_PARAM_ID,
+						evt.get_fd_info()->set_name(evt.get_param_as_str(SOCKET_TUPLE_PARAM_ID,
 						                                                 &parstr,
-						                                                 sinsp_evt::PF_SIMPLE);
+						                                                 sinsp_evt::PF_SIMPLE));
 					}
 				}
 			}
@@ -3297,7 +3299,7 @@ void sinsp_parser::parse_rw_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 					        observer->on_write(evt,
 					                           tid,
 					                           evt->get_tinfo()->m_lastevent_fd,
-					                           evt->get_fd_info(),
+					                           evt->get_fd_info().get(),
 					                           data,
 					                           (uint32_t)retval,
 					                           data_len);
@@ -3498,13 +3500,13 @@ void sinsp_parser::parse_dup_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict)
 		//			  will close the existing one. So we need to clean it up / overwrite;
 		//  - dup3(): same as dup2().
 		//
-		sinsp_fdinfo *oldfdinfo = evt.get_tinfo()->get_fd(retval);
+		auto oldfdinfo = evt.get_tinfo()->get_fd(retval);
 
-		if(oldfdinfo != nullptr) {
+		if(oldfdinfo) {
 			erase_fd_params eparams;
 
 			eparams.m_fd = retval;
-			eparams.m_fdinfo = oldfdinfo;
+			eparams.m_fdinfo = oldfdinfo.get();
 			eparams.m_remove_from_table = false;
 			eparams.m_tinfo = evt.get_tinfo();
 			erase_fd(eparams, verdict);
@@ -3921,7 +3923,7 @@ void sinsp_parser::parse_getsockopt_exit(sinsp_evt &evt, sinsp_parser_verdict &v
 
 	fd = evt.get_param(1)->as<int64_t>();
 
-	evt.get_tinfo()->m_lastevent_fd = fd;
+	evt.get_tinfo()->m_lastevent_fd.store(fd);
 
 	// right now we only parse getsockopt() for SO_ERROR options
 	// if that ever changes, move this check inside
@@ -4133,23 +4135,23 @@ void sinsp_parser::parse_pidfd_getfd_exit(sinsp_evt &evt) const {
 	evt.get_tinfo()->add_fd(fd, targetfd_fdinfo->clone());
 }
 
-uint8_t* sinsp_parser::get_thread_event_data(int64_t tid) const {
+uint8_t *sinsp_parser::get_thread_event_data(int64_t tid) const {
 	auto it = m_thread_data.find(tid);
-	if (it != m_thread_data.end()) {
+	if(it != m_thread_data.end()) {
 		return it->second.event_data.get();
 	}
-	
+
 	return nullptr;
 }
 
-void sinsp_parser::set_thread_event_data(int64_t tid, const uint8_t* data, size_t size) {
+void sinsp_parser::set_thread_event_data(int64_t tid, const uint8_t *data, size_t size) {
 	// Add safety check to prevent corrupted size values
-	if(size == 0 || size > 1024*1024) { // 1MB max reasonable size
+	if(size == 0 || size > 1024 * 1024) {  // 1MB max reasonable size
 		ASSERT(false);
 		return;
 	}
-	
-	auto& thread_data = m_thread_data[tid];
+
+	auto &thread_data = m_thread_data[tid];
 	thread_data.event_data = std::make_unique<uint8_t[]>(size);
 	memcpy(thread_data.event_data.get(), data, size);
 	thread_data.event_data_size = size;
@@ -4157,95 +4159,13 @@ void sinsp_parser::set_thread_event_data(int64_t tid, const uint8_t* data, size_
 
 void sinsp_parser::free_thread_event_data(int64_t tid) {
 	auto it = m_thread_data.find(tid);
-	if (it != m_thread_data.end()) {
+	if(it != m_thread_data.end()) {
 		it->second.event_data.reset();
 		it->second.event_data_size = 0;
+		it->second.lastevent_type = -1;
 	}
 }
 
 void sinsp_parser::clear_thread_event_data() {
 	m_thread_data.clear();
-}
-
-// Multi-event processing state management methods
-int64_t sinsp_parser::get_thread_lastevent_fd(int64_t tid) const {
-	auto it = m_thread_data.find(tid);
-	return (it != m_thread_data.end()) ? it->second.lastevent_fd : -1;
-}
-
-void sinsp_parser::set_thread_lastevent_fd(int64_t tid, int64_t fd) const {
-	m_thread_data[tid].lastevent_fd = fd;
-}
-
-uint64_t sinsp_parser::get_thread_lastevent_ts(int64_t tid) const {
-	auto it = m_thread_data.find(tid);
-	return (it != m_thread_data.end()) ? it->second.lastevent_ts : 0;
-}
-
-void sinsp_parser::set_thread_lastevent_ts(int64_t tid, uint64_t ts) const {
-	m_thread_data[tid].lastevent_ts = ts;
-}
-
-uint64_t sinsp_parser::get_thread_prevevent_ts(int64_t tid) const {
-	auto it = m_thread_data.find(tid);
-	return (it != m_thread_data.end()) ? it->second.prevevent_ts : 0;
-}
-
-void sinsp_parser::set_thread_prevevent_ts(int64_t tid, uint64_t ts) const {
-	m_thread_data[tid].prevevent_ts = ts;
-}
-
-uint64_t sinsp_parser::get_thread_lastaccess_ts(int64_t tid) const {
-	auto it = m_thread_data.find(tid);
-	return (it != m_thread_data.end()) ? it->second.lastaccess_ts : 0;
-}
-
-void sinsp_parser::set_thread_lastaccess_ts(int64_t tid, uint64_t ts) const {
-	m_thread_data[tid].lastaccess_ts = ts;
-}
-
-uint64_t sinsp_parser::get_thread_clone_ts(int64_t tid) const {
-	auto it = m_thread_data.find(tid);
-	return (it != m_thread_data.end()) ? it->second.clone_ts : 0;
-}
-
-void sinsp_parser::set_thread_clone_ts(int64_t tid, uint64_t ts) const {
-	m_thread_data[tid].clone_ts = ts;
-}
-
-uint64_t sinsp_parser::get_thread_lastexec_ts(int64_t tid) const {
-	auto it = m_thread_data.find(tid);
-	return (it != m_thread_data.end()) ? it->second.lastexec_ts : 0;
-}
-
-void sinsp_parser::set_thread_lastexec_ts(int64_t tid, uint64_t ts) const {
-	m_thread_data[tid].lastexec_ts = ts;
-}
-
-void sinsp_parser::clear_thread_state(int64_t tid) const {
-	m_thread_data.erase(tid);
-}
-
-void sinsp_parser::clear_all_thread_state() const {
-	m_thread_data.clear();
-}
-
-// File descriptor table management methods
-sinsp_fdtable* sinsp_parser::get_thread_fdtable(int64_t tid) const {
-	auto it = m_thread_data.find(tid);
-	if (it != m_thread_data.end() && it->second.fdtable) {
-		return it->second.fdtable.get();
-	}
-	return nullptr;
-}
-
-void sinsp_parser::set_thread_fdtable(int64_t tid, std::unique_ptr<sinsp_fdtable> fdtable) const {
-	m_thread_data[tid].fdtable = std::move(fdtable);
-}
-
-void sinsp_parser::clear_thread_fdtable(int64_t tid) const {
-	auto it = m_thread_data.find(tid);
-	if (it != m_thread_data.end()) {
-		it->second.fdtable.reset();
-	}
 }

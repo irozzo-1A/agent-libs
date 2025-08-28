@@ -62,6 +62,7 @@ sinsp_buffer_t SINSP_INVALID_BUFFER_HANDLE = 0;
 struct sinsp_evt_filter {
 	bool do_filter_later;
 	sinsp_evt* evt;
+	sinsp_buffer* buffer;
 
 	explicit sinsp_evt_filter(sinsp_evt* e): do_filter_later(false), evt(e) {
 		//
@@ -94,7 +95,7 @@ struct sinsp_evt_filter {
 				if(!inspector->run_filters_on_evt(evt)) {
 					if(evt->get_tinfo() != nullptr) {
 						if(!(eflags & EF_SKIPPARSERESET || etype == PPME_SCHEDSWITCH_6_E)) {
-							evt->get_tinfo()->set_lastevent_type(PPM_EVENT_MAX);
+							buffer->set_lastevent_type(evt->get_tid(), PPM_EVENT_MAX);
 						}
 					}
 					evt->set_filtered_out(true);
@@ -982,7 +983,8 @@ void sinsp::close() {
 		}
 	}
 
-	// purge pending routines and wait for the running ones
+	// purge pending routines and wait for the running ones BEFORE clearing state
+	// This ensures no event processing is happening when we clear thread info
 	if(m_thread_pool) {
 		m_thread_pool->purge();
 	}
@@ -1082,9 +1084,8 @@ void sinsp::on_new_entry_from_proc(void* context,
 				tevt.set_num(0);
 				tevt.set_inspector(this);
 				tevt.set_tinfo(sinsp_tinfo.get());
-				tevt.set_fdinfo_ref(nullptr);
 				tevt.set_fd_info(nullptr);
-				sinsp_tinfo->m_lastevent_fd = -1;
+				sinsp_tinfo->m_lastevent_fd.store(-1);
 
 				sinsp_tinfo->m_filtered_out = !m_filter->run(&tevt);
 			}
@@ -1143,10 +1144,9 @@ void sinsp::on_new_entry_from_proc(void* context,
 			tevt.set_cpuid(0);
 			tevt.set_num(0);
 			tevt.set_tinfo(sinsp_tinfo.get());
-			tevt.set_fdinfo_ref(nullptr);
 			tevt.set_fd_info(added_fdinfo);
-			int64_t tlefd = sinsp_tinfo->m_lastevent_fd;
-			sinsp_tinfo->m_lastevent_fd = fdinfo->fd;
+			int64_t tlefd = sinsp_tinfo->m_lastevent_fd.load();
+			sinsp_tinfo->m_lastevent_fd.store(fdinfo->fd);
 
 			if(m_filter->run(&tevt)) {
 				// we mark the thread info as non-filterable due to one event
@@ -1159,7 +1159,7 @@ void sinsp::on_new_entry_from_proc(void* context,
 				fdinfo->type = SCAP_FD_UNINITIALIZED;
 			}
 
-			sinsp_tinfo->m_lastevent_fd = tlefd;
+			sinsp_tinfo->m_lastevent_fd.store(tlefd);
 		}
 	}
 }
@@ -1601,8 +1601,8 @@ int32_t sinsp::next(sinsp_evt** puevt, const sinsp_buffer_t buffer_h) {
 	//
 	if(evt->get_tinfo() && evt->get_type() != PPME_SCHEDSWITCH_1_E &&
 	   evt->get_type() != PPME_SCHEDSWITCH_6_E) {
-		evt->get_tinfo()->m_prevevent_ts = evt->get_tinfo()->m_lastevent_ts;
-		evt->get_tinfo()->m_lastevent_ts = m_timestamper.get_cached_ts();
+		evt->get_tinfo()->m_prevevent_ts.store(evt->get_tinfo()->m_lastevent_ts.load());
+		evt->get_tinfo()->m_lastevent_ts.store(m_timestamper.get_cached_ts());
 	}
 
 	//

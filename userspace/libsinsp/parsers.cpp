@@ -422,14 +422,15 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 	// todo!: at the end of we work we should remove the enter/exit distinction and ideally we
 	//   should set the fdinfos directly here and return if they are not present.
 	if(PPME_IS_ENTER(etype)) {
-		tinfo->m_lastevent_fd = -1;
+		set_thread_lastevent_fd(tinfo->m_tid, -1);
 		tinfo->set_lastevent_type(etype);
 
 		if(evt.uses_fd()) {
 			const int fd_location = get_enter_event_fd_location(static_cast<ppm_event_code>(etype));
 			ASSERT(evt.get_param_info(fd_location)->type == PT_FD);
-			tinfo->m_lastevent_fd = evt.get_param(fd_location)->as<int64_t>();
-			evt.set_fd_info(tinfo->get_fd(tinfo->m_lastevent_fd));
+			int64_t fd = evt.get_param(fd_location)->as<int64_t>();
+			set_thread_lastevent_fd(tinfo->m_tid, fd);
+			evt.set_fd_info(tinfo->get_fd(fd));
 		}
 
 		tinfo->m_latency = 0;
@@ -4133,9 +4134,9 @@ void sinsp_parser::parse_pidfd_getfd_exit(sinsp_evt &evt) const {
 }
 
 uint8_t* sinsp_parser::get_thread_event_data(int64_t tid) const {
-	auto it = m_thread_event_data.find(tid);
-	if (it != m_thread_event_data.end()) {
-		return it->second.get();
+	auto it = m_thread_data.find(tid);
+	if (it != m_thread_data.end()) {
+		return it->second.event_data.get();
 	}
 	
 	return nullptr;
@@ -4148,17 +4149,103 @@ void sinsp_parser::set_thread_event_data(int64_t tid, const uint8_t* data, size_
 		return;
 	}
 	
-	m_thread_event_data[tid] = std::make_unique<uint8_t[]>(size);
-	memcpy(m_thread_event_data[tid].get(), data, size);
-	m_thread_event_data_size[tid] = size;
+	auto& thread_data = m_thread_data[tid];
+	thread_data.event_data = std::make_unique<uint8_t[]>(size);
+	memcpy(thread_data.event_data.get(), data, size);
+	thread_data.event_data_size = size;
 }
 
 void sinsp_parser::free_thread_event_data(int64_t tid) {
-	m_thread_event_data.erase(tid);
-	m_thread_event_data_size.erase(tid);
+	auto it = m_thread_data.find(tid);
+	if (it != m_thread_data.end()) {
+		it->second.event_data.reset();
+		it->second.event_data_size = 0;
+	}
 }
 
 void sinsp_parser::clear_thread_event_data() {
-	m_thread_event_data.clear();
-	m_thread_event_data_size.clear();
+	m_thread_data.clear();
+}
+
+// Multi-event processing state management methods
+int64_t sinsp_parser::get_thread_lastevent_fd(int64_t tid) const {
+	auto it = m_thread_data.find(tid);
+	return (it != m_thread_data.end()) ? it->second.lastevent_fd : -1;
+}
+
+void sinsp_parser::set_thread_lastevent_fd(int64_t tid, int64_t fd) const {
+	m_thread_data[tid].lastevent_fd = fd;
+}
+
+uint64_t sinsp_parser::get_thread_lastevent_ts(int64_t tid) const {
+	auto it = m_thread_data.find(tid);
+	return (it != m_thread_data.end()) ? it->second.lastevent_ts : 0;
+}
+
+void sinsp_parser::set_thread_lastevent_ts(int64_t tid, uint64_t ts) const {
+	m_thread_data[tid].lastevent_ts = ts;
+}
+
+uint64_t sinsp_parser::get_thread_prevevent_ts(int64_t tid) const {
+	auto it = m_thread_data.find(tid);
+	return (it != m_thread_data.end()) ? it->second.prevevent_ts : 0;
+}
+
+void sinsp_parser::set_thread_prevevent_ts(int64_t tid, uint64_t ts) const {
+	m_thread_data[tid].prevevent_ts = ts;
+}
+
+uint64_t sinsp_parser::get_thread_lastaccess_ts(int64_t tid) const {
+	auto it = m_thread_data.find(tid);
+	return (it != m_thread_data.end()) ? it->second.lastaccess_ts : 0;
+}
+
+void sinsp_parser::set_thread_lastaccess_ts(int64_t tid, uint64_t ts) const {
+	m_thread_data[tid].lastaccess_ts = ts;
+}
+
+uint64_t sinsp_parser::get_thread_clone_ts(int64_t tid) const {
+	auto it = m_thread_data.find(tid);
+	return (it != m_thread_data.end()) ? it->second.clone_ts : 0;
+}
+
+void sinsp_parser::set_thread_clone_ts(int64_t tid, uint64_t ts) const {
+	m_thread_data[tid].clone_ts = ts;
+}
+
+uint64_t sinsp_parser::get_thread_lastexec_ts(int64_t tid) const {
+	auto it = m_thread_data.find(tid);
+	return (it != m_thread_data.end()) ? it->second.lastexec_ts : 0;
+}
+
+void sinsp_parser::set_thread_lastexec_ts(int64_t tid, uint64_t ts) const {
+	m_thread_data[tid].lastexec_ts = ts;
+}
+
+void sinsp_parser::clear_thread_state(int64_t tid) const {
+	m_thread_data.erase(tid);
+}
+
+void sinsp_parser::clear_all_thread_state() const {
+	m_thread_data.clear();
+}
+
+// File descriptor table management methods
+sinsp_fdtable* sinsp_parser::get_thread_fdtable(int64_t tid) const {
+	auto it = m_thread_data.find(tid);
+	if (it != m_thread_data.end() && it->second.fdtable) {
+		return it->second.fdtable.get();
+	}
+	return nullptr;
+}
+
+void sinsp_parser::set_thread_fdtable(int64_t tid, std::unique_ptr<sinsp_fdtable> fdtable) const {
+	m_thread_data[tid].fdtable = std::move(fdtable);
+}
+
+void sinsp_parser::clear_thread_fdtable(int64_t tid) const {
+	auto it = m_thread_data.find(tid);
+	if (it != m_thread_data.end()) {
+		it->second.fdtable.reset();
+	}
 }

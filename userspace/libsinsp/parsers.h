@@ -101,6 +101,27 @@ private:
 	//
 	inline void store_event(sinsp_evt& evt);
 
+	// Multi-event processing state management methods
+	int64_t get_thread_lastevent_fd(int64_t tid) const;
+	void set_thread_lastevent_fd(int64_t tid, int64_t fd) const;
+	uint64_t get_thread_lastevent_ts(int64_t tid) const;
+	void set_thread_lastevent_ts(int64_t tid, uint64_t ts) const;
+	uint64_t get_thread_prevevent_ts(int64_t tid) const;
+	void set_thread_prevevent_ts(int64_t tid, uint64_t ts) const;
+	uint64_t get_thread_lastaccess_ts(int64_t tid) const;
+	void set_thread_lastaccess_ts(int64_t tid, uint64_t ts) const;
+	uint64_t get_thread_clone_ts(int64_t tid) const;
+	void set_thread_clone_ts(int64_t tid, uint64_t ts) const;
+	uint64_t get_thread_lastexec_ts(int64_t tid) const;
+	void set_thread_lastexec_ts(int64_t tid, uint64_t ts) const;
+	void clear_thread_state(int64_t tid) const;
+	void clear_all_thread_state() const;
+
+	// File descriptor table management methods
+	sinsp_fdtable* get_thread_fdtable(int64_t tid) const;
+	void set_thread_fdtable(int64_t tid, std::unique_ptr<sinsp_fdtable> fdtable) const;
+	void clear_thread_fdtable(int64_t tid) const;
+
 	//
 	// Parsers
 	//
@@ -237,7 +258,23 @@ private:
 
 	bool m_track_connection_status = false;
 
-	// Per-worker thread event data storage (moved from threadinfo to avoid race conditions)
-	std::unordered_map<int64_t, std::unique_ptr<uint8_t[]>> m_thread_event_data;
-	std::unordered_map<int64_t, size_t> m_thread_event_data_size;
+	// Per-worker thread data storage (moved from threadinfo to avoid race conditions)
+	struct thread_data {
+		// Event data storage
+		std::unique_ptr<uint8_t[]> event_data;
+		size_t event_data_size;
+
+		// Multi-event processing state
+		int64_t lastevent_fd = -1;      ///< The FD of the last event used by this thread
+		uint64_t lastevent_ts = 0;      ///< timestamp of the last event for this thread
+		uint64_t prevevent_ts = 0;      ///< timestamp of the event before the last for this thread
+		uint64_t lastaccess_ts = 0;     ///< The last time this thread was looked up
+		uint64_t clone_ts = 0;          ///< When the clone that started this process happened
+		uint64_t lastexec_ts = 0;       ///< The last time exec was called for this thread
+
+		// File descriptor table (moved from threadinfo to avoid race conditions)
+		std::unique_ptr<sinsp_fdtable> fdtable;
+	};
+
+	mutable std::unordered_map<int64_t, thread_data> m_thread_data;
 };

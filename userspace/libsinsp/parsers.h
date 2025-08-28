@@ -83,7 +83,7 @@ public:
 	// Thread event data management (moved from threadinfo)
 	//
 	uint8_t* get_thread_event_data(int64_t tid) const;
-	void set_thread_event_data(int64_t tid, uint8_t* data, size_t size);
+	void set_thread_event_data(int64_t tid, const uint8_t* data, size_t size);
 	void free_thread_event_data(int64_t tid);
 	void clear_thread_event_data();
 

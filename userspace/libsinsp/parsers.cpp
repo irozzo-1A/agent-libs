@@ -528,7 +528,8 @@ void sinsp_parser::store_event(sinsp_evt &evt) {
 	//
 	const uint32_t elen = scap_event_getlen(evt.get_scap_evt());
 
-	if(elen > SP_EVT_BUF_SIZE) {
+	// Add safety checks to prevent corrupted size values
+	if(elen == 0 || elen > SP_EVT_BUF_SIZE || elen > 1024*1024) { // 1MB max reasonable size
 		ASSERT(false);
 		return;
 	}
@@ -540,7 +541,7 @@ void sinsp_parser::store_event(sinsp_evt &evt) {
 	// Free any existing event data for this thread
 	free_thread_event_data(tinfo->m_tid);
 	// Store the new event data
-	set_thread_event_data(tinfo->m_tid, (uint8_t*)evt.get_scap_evt(), elen);
+	set_thread_event_data(tinfo->m_tid, reinterpret_cast<const uint8_t*>(evt.get_scap_evt()), elen);
 	tinfo->set_lastevent_cpuid(evt.get_cpuid());
 
 	if(m_params->m_sinsp_stats_v2 != nullptr) {
@@ -4140,7 +4141,13 @@ uint8_t* sinsp_parser::get_thread_event_data(int64_t tid) const {
 	return nullptr;
 }
 
-void sinsp_parser::set_thread_event_data(int64_t tid, uint8_t* data, size_t size) {
+void sinsp_parser::set_thread_event_data(int64_t tid, const uint8_t* data, size_t size) {
+	// Add safety check to prevent corrupted size values
+	if(size == 0 || size > 1024*1024) { // 1MB max reasonable size
+		ASSERT(false);
+		return;
+	}
+	
 	m_thread_event_data[tid] = std::make_unique<uint8_t[]>(size);
 	memcpy(m_thread_event_data[tid].get(), data, size);
 	m_thread_event_data_size[tid] = size;

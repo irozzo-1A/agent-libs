@@ -375,11 +375,10 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 
 	// Ignore events with EF_SKIPPARSERESET flag.
 	if(const auto eflags = evt.get_info_flags(); eflags & EF_SKIPPARSERESET) {
-		sinsp_threadinfo *tinfo = nullptr;
+		std::shared_ptr<sinsp_threadinfo> tinfo = nullptr;
 		if(etype == PPME_PROCINFO_E) {
 			tinfo = m_params->m_thread_manager
-			                ->get_thread_ref(evt.get_scap_evt()->tid, false, false)
-			                .get();
+			                ->get_thread_ref(evt.get_scap_evt()->tid, false, false);
 		}
 		evt.set_tinfo(tinfo);
 		return false;
@@ -397,7 +396,7 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 
 	const auto tid = evt.get_scap_evt()->tid;
 	const bool query_os = can_query_os_for_thread_info(etype);
-	const auto tinfo = m_params->m_thread_manager->get_thread_ref(tid, query_os, false).get();
+	const auto tinfo = m_params->m_thread_manager->get_thread_ref(tid, query_os, false);
 
 	evt.set_tinfo(tinfo);
 
@@ -415,7 +414,7 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 	}
 
 	if(query_os) {
-		tinfo->m_flags |= PPM_CL_ACTIVE;
+		tinfo->set_flag(PPM_CL_ACTIVE);
 	}
 
 	// todo!: at the end of we work we should remove the enter/exit distinction and ideally we
@@ -432,8 +431,8 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 			evt.set_fd_info(tinfo->get_fd(fd));
 		}
 
-		tinfo->m_latency = 0;
-		tinfo->m_last_latency_entertime = evt.get_ts();
+		tinfo->m_latency.store(0);
+		tinfo->m_last_latency_entertime.store(evt.get_ts());
 		return true;
 	}
 
@@ -444,9 +443,9 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 	//
 	// event latency
 	//
-	if(tinfo->m_last_latency_entertime != 0) {
-		tinfo->m_latency = evt.get_ts() - tinfo->m_last_latency_entertime;
-		ASSERT(static_cast<int64_t>(tinfo->m_latency) >= 0);
+	if(tinfo->m_last_latency_entertime.load() != 0) {
+		tinfo->m_latency.store(evt.get_ts() - tinfo->m_last_latency_entertime.load());
+		ASSERT(static_cast<int64_t>(tinfo->m_latency.load()) >= 0);
 	}
 
 	if(etype == PPME_SYSCALL_EXECVE_19_X &&
@@ -688,7 +687,7 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt &evt,
 	}
 
 	/* Update the evt.get_tinfo() of the caller. */
-	evt.set_tinfo(caller_tinfo.get());
+	evt.set_tinfo(caller_tinfo);
 
 	/// todo(@Andreagit97): here we could update `comm` `exe` and `args` with fresh info from the
 	/// event
@@ -1335,7 +1334,7 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt &evt, sinsp_parser_verdict &
 	 * We update it here, in this way the `on_clone`
 	 * callback will use updated info.
 	 */
-	evt.set_tinfo(new_child.get());
+	evt.set_tinfo(new_child);
 
 	//
 	// If there's a listener, add a callback to later invoke it.
@@ -2614,7 +2613,7 @@ void sinsp_parser::parse_close_exit(sinsp_evt &evt, sinsp_parser_verdict &verdic
 		eparams.m_fd = evt.get_tinfo()->m_lastevent_fd;
 		eparams.m_fdinfo = evt.get_fd_info().get();
 		eparams.m_remove_from_table = true;
-		eparams.m_tinfo = evt.get_tinfo();
+		eparams.m_tinfo = evt.get_tinfo().get();
 		erase_fd(eparams, verdict);
 		return;
 	}
@@ -3508,7 +3507,7 @@ void sinsp_parser::parse_dup_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict)
 			eparams.m_fd = retval;
 			eparams.m_fdinfo = oldfdinfo.get();
 			eparams.m_remove_from_table = false;
-			eparams.m_tinfo = evt.get_tinfo();
+			eparams.m_tinfo = evt.get_tinfo().get();
 			erase_fd(eparams, verdict);
 		}
 

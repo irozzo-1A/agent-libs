@@ -149,8 +149,8 @@ void sinsp_threadinfo::init() {
 	m_vpid = -1;
 	m_pidns_init_start_ts = 0;
 	m_lastevent_fd.store(0);
-	m_last_latency_entertime = 0;
-	m_latency = 0;
+	m_last_latency_entertime.store(0);
+	m_latency.store(0);
 	m_parent_loop_detected = false;
 	m_tty = 0;
 	m_cap_inheritable = 0;

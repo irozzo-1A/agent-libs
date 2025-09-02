@@ -113,12 +113,8 @@ uint32_t sinsp_evt::get_iosize() const {
 }
 
 sinsp_threadinfo *sinsp_evt::get_thread_info(bool query_os_if_not_found) {
-	if(NULL != m_tinfo) {
-		return m_tinfo;
-	} else if(m_tinfo_ref) {
-		m_tinfo = m_tinfo_ref.get();
-
-		return m_tinfo;
+	if(m_tinfo) {
+		return m_tinfo.get();
 	}
 
 	return m_inspector->m_thread_manager->get_thread_ref(m_pevt->tid, query_os_if_not_found, false)
@@ -126,7 +122,7 @@ sinsp_threadinfo *sinsp_evt::get_thread_info(bool query_os_if_not_found) {
 }
 
 int64_t sinsp_evt::get_fd_num() const {
-	if(m_fdinfo) {
+	if(m_fdinfo && m_tinfo) {
 		return m_tinfo->m_lastevent_fd;
 	} else {
 		return sinsp_evt::INVALID_FD_NUM;
@@ -1716,7 +1712,10 @@ bool sinsp_evt::is_network_error() const {
 }
 
 uint64_t sinsp_evt::get_lastevent_ts() const {
-	return m_tinfo->m_lastevent_ts;
+	if(m_tinfo) {
+		return m_tinfo->m_lastevent_ts;
+	}
+	return 0;
 }
 
 void sinsp_evt::save_enter_event_params(sinsp_evt *enter_evt) {

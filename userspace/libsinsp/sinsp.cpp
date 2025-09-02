@@ -1083,7 +1083,7 @@ void sinsp::on_new_entry_from_proc(void* context,
 				tevt.set_cpuid(0);
 				tevt.set_num(0);
 				tevt.set_inspector(this);
-				tevt.set_tinfo(sinsp_tinfo.get());
+				tevt.set_tinfo(sinsp_tinfo);
 				tevt.set_fd_info(nullptr);
 				sinsp_tinfo->m_lastevent_fd.store(-1);
 
@@ -1143,7 +1143,7 @@ void sinsp::on_new_entry_from_proc(void* context,
 			tevt.set_info(&(g_infotables.m_event_info[PPME_SYSCALL_READ_X]));
 			tevt.set_cpuid(0);
 			tevt.set_num(0);
-			tevt.set_tinfo(sinsp_tinfo.get());
+			tevt.set_tinfo(sinsp_tinfo);
 			tevt.set_fd_info(added_fdinfo);
 			int64_t tlefd = sinsp_tinfo->m_lastevent_fd.load();
 			sinsp_tinfo->m_lastevent_fd.store(fdinfo->fd);
@@ -2083,23 +2083,26 @@ void sinsp::set_proc_scan_log_interval_ms(uint64_t val) {
 bool sinsp_thread_manager::remove_inactive_threads() {
 	const uint64_t last_event_ts = m_timestamper.get_cached_ts();
 
-	if(m_last_flush_time_ns == 0) {
-		// Set the first table scan for 30 seconds in, so that we can spot bugs in the logic without
-		// having to wait for tens of minutes.
-		if(m_threads_purging_scan_time_ns > 30 * ONE_SECOND_IN_NS) {
-			m_last_flush_time_ns =
-			        last_event_ts - m_threads_purging_scan_time_ns + 30 * ONE_SECOND_IN_NS;
-		} else {
-			m_last_flush_time_ns = last_event_ts - m_threads_purging_scan_time_ns;
+	{
+		std::unique_lock<std::mutex> lock(m_flush_mutex);
+		if(m_last_flush_time_ns == 0) {
+			// Set the first table scan for 30 seconds in, so that we can spot bugs in the logic without
+			// having to wait for tens of minutes.
+			if(m_threads_purging_scan_time_ns > 30 * ONE_SECOND_IN_NS) {
+				m_last_flush_time_ns =
+						last_event_ts - m_threads_purging_scan_time_ns + 30 * ONE_SECOND_IN_NS;
+			} else {
+				m_last_flush_time_ns = last_event_ts - m_threads_purging_scan_time_ns;
+			}
 		}
-	}
 
-	if(last_event_ts <= m_last_flush_time_ns + m_threads_purging_scan_time_ns) {
-		return false;
-	}
+		if(last_event_ts <= m_last_flush_time_ns + m_threads_purging_scan_time_ns) {
+			return false;
+		}
 
-	libsinsp_logger()->format(sinsp_logger::SEV_DEBUG, "Flushing thread table");
-	m_last_flush_time_ns = last_event_ts;
+		libsinsp_logger()->format(sinsp_logger::SEV_DEBUG, "Flushing thread table");
+		m_last_flush_time_ns = last_event_ts;
+	}
 
 	// Here we loop over the table in search of threads to delete. We remove:
 	// 1. Invalid threads.

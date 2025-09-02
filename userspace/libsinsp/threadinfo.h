@@ -29,6 +29,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -606,8 +607,8 @@ public:
 	//
 	// State for filtering
 	//
-	uint64_t m_last_latency_entertime;
-	uint64_t m_latency;
+	std::atomic<uint64_t> m_last_latency_entertime;
+	std::atomic<uint64_t> m_latency;
 
 	/* Note that `fd_table` should be shared with the main thread only if `PPM_CL_CLONE_FILES`
 	 * is specified. Today we always specify `PPM_CL_CLONE_FILES` for all threads.
@@ -726,6 +727,11 @@ public:
 		m_main_fdtable =
 		        !fdtable ? nullptr
 		                 : static_cast<const libsinsp::state::base_table*>(fdtable->table_ptr());
+	}
+
+	inline void set_flag(uint32_t flag) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags |= flag;
 	}
 
 	void set_exepath(std::string&& exepath);

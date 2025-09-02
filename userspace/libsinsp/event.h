@@ -579,8 +579,7 @@ public:
 	inline void init() {
 		m_flags = EF_NONE;
 		m_info = &(m_event_info_table[m_pevt->type]);
-		m_tinfo_ref.reset();
-		m_tinfo = NULL;
+		m_tinfo.reset();
 		m_fdinfo = NULL;
 		m_fdinfo_name_changed = false;
 		m_iosize = 0;
@@ -591,8 +590,7 @@ public:
 		m_flags = EF_NONE;
 		m_pevt = (scap_evt*)evdata;
 		m_info = &(m_event_info_table[m_pevt->type]);
-		m_tinfo_ref.reset();
-		m_tinfo = NULL;
+		m_tinfo.reset();
 		m_fdinfo = NULL;
 		m_fdinfo_name_changed = false;
 		m_iosize = 0;
@@ -660,17 +658,11 @@ public:
 
 	inline void set_filtered_out(bool v) { m_filtered_out = v; }
 
-	inline std::shared_ptr<const sinsp_threadinfo> get_tinfo_ref() const { return m_tinfo_ref; }
+	inline std::shared_ptr<const sinsp_threadinfo> get_tinfo() const { return m_tinfo; }
 
-	inline const std::shared_ptr<sinsp_threadinfo>& get_tinfo_ref() { return m_tinfo_ref; }
+	inline std::shared_ptr<sinsp_threadinfo> get_tinfo() { return m_tinfo; }
 
-	inline void set_tinfo_ref(const std::shared_ptr<sinsp_threadinfo>& v) { m_tinfo_ref = v; }
-
-	inline const sinsp_threadinfo* get_tinfo() const { return m_tinfo; }
-
-	inline sinsp_threadinfo* get_tinfo() { return m_tinfo; }
-
-	inline void set_tinfo(sinsp_threadinfo* v) { m_tinfo = v; }
+	inline void set_tinfo(std::shared_ptr<sinsp_threadinfo> v) { m_tinfo = std::move(v); }
 
 	inline const std::vector<char>& get_paramstr_storage() const { return m_paramstr_storage; }
 
@@ -788,10 +780,7 @@ private:
 	std::vector<char> m_paramstr_storage;
 	std::vector<char> m_resolved_paramstr_storage;
 
-	// reference to keep threadinfo alive. currently only used for synthetic container event thread
-	// info it should either be null, or point to the same place as m_tinfo
-	std::shared_ptr<sinsp_threadinfo> m_tinfo_ref;
-	sinsp_threadinfo* m_tinfo;
+	std::shared_ptr<sinsp_threadinfo> m_tinfo;
 	std::shared_ptr<sinsp_fdinfo> m_fdinfo;
 
 	// If true, then the associated fdinfo changed names as a part

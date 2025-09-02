@@ -868,7 +868,7 @@ uint8_t* sinsp_filter_check_event::extract_single(sinsp_evt* evt,
 				return NULL;
 			}
 
-			m_val.u64 = evt->get_tinfo()->m_latency;
+			m_val.u64 = evt->get_tinfo()->m_latency.load();
 		}
 
 		RETURN_EXTRACT_VAR(m_val.u64);
@@ -882,9 +882,10 @@ uint8_t* sinsp_filter_check_event::extract_single(sinsp_evt* evt,
 				return NULL;
 			}
 
+			uint64_t latency = evt->get_tinfo()->m_latency.load();
 			m_converter->set_val(PT_RELTIME,
 			                     EPF_NONE,
-			                     (uint8_t*)&evt->get_tinfo()->m_latency,
+			                     (uint8_t*)&latency,
 			                     8,
 			                     0,
 			                     ppm_print_format::PF_DEC);
@@ -904,7 +905,7 @@ uint8_t* sinsp_filter_check_event::extract_single(sinsp_evt* evt,
 				return NULL;
 			}
 
-			uint64_t lat = evt->get_tinfo()->m_latency;
+			uint64_t lat = evt->get_tinfo()->m_latency.load();
 
 			if(m_field_id == TYPE_LATENCY_S) {
 				m_val.u64 = lat / 1000000000;
@@ -922,7 +923,7 @@ uint8_t* sinsp_filter_check_event::extract_single(sinsp_evt* evt,
 				return NULL;
 			}
 
-			uint64_t lat = evt->get_tinfo()->m_latency;
+			uint64_t lat = evt->get_tinfo()->m_latency.load();
 			if(lat != 0) {
 				double llatency = log10((double)lat);
 
@@ -988,7 +989,7 @@ uint8_t* sinsp_filter_check_event::extract_single(sinsp_evt* evt,
 
 		case 'd': {
 			if(evt->get_tinfo() != NULL) {
-				long long unsigned lat = evt->get_tinfo()->m_latency;
+				long long unsigned lat = evt->get_tinfo()->m_latency.load();
 
 				m_strstorage += to_string(lat / 1000000000);
 				m_strstorage += ".";
@@ -1372,7 +1373,7 @@ uint8_t* sinsp_filter_check_event::extract_single(sinsp_evt* evt,
 
 		if(eflags & (EF_WAITS) && PPME_IS_EXIT(etype)) {
 			if(evt->get_tinfo() != NULL) {
-				m_val.u64 = evt->get_tinfo()->m_latency;
+				m_val.u64 = evt->get_tinfo()->m_latency.load();
 			} else {
 				m_val.u64 = 0;
 			}

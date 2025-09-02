@@ -84,6 +84,7 @@ limitations under the License.
 #include <memory>
 #include <string>
 #include <vector>
+#include <atomic>
 
 #define ONE_SECOND_IN_NS 1000000000LL
 
@@ -1062,7 +1063,7 @@ public:
 
 	// next reservable buffer handle. Used internally by reserve_buffer_handle() to take note of the
 	// buffer handle to be returned on the next invocation.
-	sinsp_buffer_t m_next_reservable_buffer_handle;
+	std::atomic<sinsp_buffer_t> m_next_reservable_buffer_handle;
 };
 
 /*@}*/

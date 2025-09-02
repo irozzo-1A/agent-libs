@@ -801,7 +801,7 @@ bool sinsp_threadinfo::uses_client_port(uint16_t number) const {
 }
 
 bool sinsp_threadinfo::is_lastevent_data_valid() const {
-	return (m_lastevent_cpuid != (uint16_t)-1);
+	return (m_lastevent_cpuid.load() != (uint16_t)-1);
 }
 
 sinsp_threadinfo* sinsp_threadinfo::get_cwd_root() {

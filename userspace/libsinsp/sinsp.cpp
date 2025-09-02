@@ -258,7 +258,7 @@ sinsp::sinsp(bool with_metrics):
 	                                   m_platform});
 
 	// m_next_reservable_buffer_handle is set to 1, as 0 is reserved for the default buffer.
-	m_next_reservable_buffer_handle = static_cast<sinsp_buffer_t>(1);
+	m_next_reservable_buffer_handle.store(static_cast<sinsp_buffer_t>(1));
 
 #if defined(ENABLE_THREAD_POOL) && !defined(__EMSCRIPTEN__)
 	m_thread_pool = std::make_shared<sinsp_thread_pool_bs>();
@@ -1616,10 +1616,15 @@ uint16_t sinsp::get_num_allocated_buffer_handles() const {
 }
 
 sinsp_buffer_t sinsp::reserve_buffer_handle() {
-	if(m_next_reservable_buffer_handle == m_buffers.size()) {
-		return SINSP_INVALID_BUFFER_HANDLE;
-	}
-	return m_next_reservable_buffer_handle++;
+	sinsp_buffer_t curr, next;
+	do {
+		curr = m_next_reservable_buffer_handle.load();
+		next = curr + 1;
+		if(next > m_buffers.size()) {
+			return SINSP_INVALID_BUFFER_HANDLE;
+		}
+	} while(!m_next_reservable_buffer_handle.compare_exchange_strong(curr, next));
+	return curr;
 }
 
 uint64_t sinsp::get_num_events() const {

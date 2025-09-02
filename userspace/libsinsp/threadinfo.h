@@ -589,6 +589,7 @@ public:
 	                                           ///< when cleaning up the table.
 	std::atomic<uint64_t> m_clone_ts{0};     ///< When the clone that started this process happened.
 	std::atomic<uint64_t> m_lastexec_ts{0};  ///< The last time exec was called
+	std::atomic<uint16_t> m_lastevent_cpuid{0};  ///< CPU ID of the last event for this thread.
 
 	size_t args_len() const;
 	size_t env_len() const;
@@ -642,9 +643,9 @@ public:
 	bool is_lastevent_data_valid() const;
 	inline void set_lastevent_data_validity(bool isvalid) {
 		if(isvalid) {
-			m_lastevent_cpuid = (uint16_t)1;
+			m_lastevent_cpuid.store((uint16_t)1);
 		} else {
-			m_lastevent_cpuid = (uint16_t)-1;
+			m_lastevent_cpuid.store((uint16_t)-1);
 		}
 	}
 
@@ -698,9 +699,9 @@ public:
 		}
 	}
 
-	inline uint16_t get_lastevent_cpuid() const { return m_lastevent_cpuid; }
+	inline uint16_t get_lastevent_cpuid() const { return m_lastevent_cpuid.load(); }
 
-	inline void set_lastevent_cpuid(uint16_t v) { m_lastevent_cpuid = v; }
+	inline void set_lastevent_cpuid(uint16_t v) { m_lastevent_cpuid.store(v); }
 
 	inline const sinsp_evt::category& get_lastevent_category() const {
 		return m_lastevent_category;
@@ -785,7 +786,6 @@ private:
 	const libsinsp::state::base_table*
 	        m_main_fdtable;  // Points to the base fd table of the current main thread
 	std::string m_cwd;       // current working directory
-	uint16_t m_lastevent_cpuid;
 	sinsp_evt::category m_lastevent_category;
 	mutable bool m_parent_loop_detected;
 	libsinsp::state::stl_container_table_adapter<decltype(m_args)> m_args_table_adapter;

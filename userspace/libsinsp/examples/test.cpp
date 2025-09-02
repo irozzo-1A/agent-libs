@@ -1077,6 +1077,7 @@ event_processing_stats process_events_parallel(
 		threads.emplace_back([&, i]() {
 			// Reserve a buffer handle for this thread
 			sinsp_buffer_t buffer_h = inspector.reserve_buffer_handle();
+			std::cout << "Reserved buffer handle: " << buffer_h << std::endl;
 
 			// Calculate events per thread (distribute evenly)
 			uint64_t events_per_thread = max_events / num_threads;

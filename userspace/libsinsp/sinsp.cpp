@@ -1481,6 +1481,7 @@ int32_t sinsp::next(sinsp_evt** puevt, const sinsp_buffer_t buffer_h) {
 			const auto tid = buffer.m_parser_verdict.get_tid_to_remove();
 			// TODO: handle m_thread_manager concurrent accesses.
 			m_thread_manager->remove_thread(tid);
+			buffer.m_parser->free_thread_event_data(tid);
 			buffer.m_parser_verdict.clear_tid_to_remove();
 		}
 		// TODO: should this only be executed by the default buffer?

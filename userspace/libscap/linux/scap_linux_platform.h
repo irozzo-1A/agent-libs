@@ -26,6 +26,7 @@ extern "C" {
 #include <libscap/scap_platform_impl.h>
 #include <libscap/engine_handle.h>
 #include <libscap/scap_log.h>
+#include <pthread.h>
 
 struct scap_mountinfo;
 
@@ -84,6 +85,7 @@ struct scap_linux_platform {
 
 	char* m_lasterr;
 	struct scap_mountinfo* m_dev_list;
+	pthread_rwlock_t m_dev_list_rwlock;  // Protects m_dev_list from concurrent access
 	uint32_t m_fd_lookup_limit;
 	bool m_minimal_scan;
 	struct scap_cgroup_interface m_cgroups;

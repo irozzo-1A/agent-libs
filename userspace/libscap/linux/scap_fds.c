@@ -175,10 +175,14 @@ uint32_t scap_linux_get_device_by_mount_id(struct scap_platform *platform,
 	scap_mountinfo *mountinfo;
 	struct scap_linux_platform *linux_platform = (struct scap_linux_platform *)platform;
 
+	// First, try to find the device in cache with read lock
+	pthread_rwlock_rdlock(&linux_platform->m_dev_list_rwlock);
 	HASH_FIND_INT64(linux_platform->m_dev_list, &requested_mount_id, mountinfo);
 	if(mountinfo != NULL) {
+		pthread_rwlock_unlock(&linux_platform->m_dev_list_rwlock);
 		return mountinfo->dev;
 	}
+	pthread_rwlock_unlock(&linux_platform->m_dev_list_rwlock);
 
 	snprintf(fd_dir_name, SCAP_MAX_PATH_SIZE, "%smountinfo", procdir);
 	finfo = fopen(fd_dir_name, "r");
@@ -199,7 +203,23 @@ uint32_t scap_linux_get_device_by_mount_id(struct scap_platform *platform,
 				int32_t uth_status = SCAP_SUCCESS;
 				mountinfo->mount_id = mount_id;
 				mountinfo->dev = dev;
-				HASH_ADD_INT64(linux_platform->m_dev_list, mount_id, mountinfo);
+				
+				// Acquire write lock to update the cache
+				pthread_rwlock_wrlock(&linux_platform->m_dev_list_rwlock);
+				
+				// Double-check that another thread didn't add it while we were reading
+				scap_mountinfo *existing_mountinfo;
+				HASH_FIND_INT64(linux_platform->m_dev_list, &requested_mount_id, existing_mountinfo);
+				if(existing_mountinfo == NULL) {
+					HASH_ADD_INT64(linux_platform->m_dev_list, mount_id, mountinfo);
+				} else {
+					// Another thread added it, free our allocation and use the existing one
+					free(mountinfo);
+					mountinfo = existing_mountinfo;
+				}
+				
+				pthread_rwlock_unlock(&linux_platform->m_dev_list_rwlock);
+				
 				if(uth_status != SCAP_SUCCESS) {
 					free(mountinfo);
 				}

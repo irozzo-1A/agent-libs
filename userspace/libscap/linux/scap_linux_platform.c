@@ -36,10 +36,12 @@ limitations under the License.
 static int32_t scap_linux_close_platform(struct scap_platform* platform) {
 	struct scap_linux_platform* linux_platform = (struct scap_linux_platform*)platform;
 
-	// Free the device table
+	// Free the device table with write lock protection
 	if(linux_platform->m_dev_list != NULL) {
+		pthread_rwlock_wrlock(&linux_platform->m_dev_list_rwlock);
 		scap_free_device_table(linux_platform->m_dev_list);
 		linux_platform->m_dev_list = NULL;
+		pthread_rwlock_unlock(&linux_platform->m_dev_list_rwlock);
 	}
 
 	scap_cgroup_clear_cache(&linux_platform->m_cgroups);
@@ -48,6 +50,11 @@ static int32_t scap_linux_close_platform(struct scap_platform* platform) {
 }
 
 static void scap_linux_free_platform(struct scap_platform* platform) {
+	struct scap_linux_platform* linux_platform = (struct scap_linux_platform*)platform;
+	
+	// Destroy the read-write lock
+	pthread_rwlock_destroy(&linux_platform->m_dev_list_rwlock);
+	
 	free(platform);
 }
 
@@ -128,6 +135,12 @@ struct scap_platform* scap_linux_alloc_platform(scap_proc_callbacks callbacks) {
 	struct scap_linux_platform* platform = calloc(1, sizeof(*platform));
 
 	if(platform == NULL) {
+		return NULL;
+	}
+
+	// Initialize the read-write lock for device list protection
+	if(pthread_rwlock_init(&platform->m_dev_list_rwlock, NULL) != 0) {
+		free(platform);
 		return NULL;
 	}
 

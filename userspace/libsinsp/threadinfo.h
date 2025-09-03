@@ -813,10 +813,19 @@ public:
 	typedef std::function<bool(sinsp_threadinfo&)> visitor_t;
 	typedef std::shared_ptr<sinsp_threadinfo> ptr_t;
 
-	inline const ptr_t& put(const ptr_t& tinfo) {
+	inline ptr_t put(const ptr_t& tinfo) {
 		std::unique_lock<std::shared_mutex> lock(m_mutex);
-		m_threads[tinfo->m_tid] = tinfo;
-		return m_threads[tinfo->m_tid];
+		// Use find() + insert() pattern to avoid race conditions with operator[]
+		auto it = m_threads.find(tinfo->m_tid);
+		if(it == m_threads.end()) {
+			// Insert new entry
+			auto result = m_threads.emplace(tinfo->m_tid, tinfo);
+			return result.first->second;  // Return a copy, not a reference
+		} else {
+			// Update existing entry - the mutex protects this operation
+			it->second = tinfo;
+			return it->second;  // Return a copy, not a reference
+		}
 	}
 
 	inline sinsp_threadinfo* get(uint64_t tid) {
@@ -828,13 +837,13 @@ public:
 		return it->second.get();
 	}
 
-	inline const ptr_t& get_ref(uint64_t tid) {
+	inline ptr_t get_ref(uint64_t tid) {
 		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		auto it = m_threads.find(tid);
 		if(it == m_threads.end()) {
-			return m_nullptr_ret;
+			return ptr_t();  // Return empty shared_ptr instead of reference
 		}
-		return it->second;
+		return it->second;  // Return a copy, not a reference
 	}
 
 	inline void erase(uint64_t tid) {
@@ -884,6 +893,5 @@ public:
 
 protected:
 	std::unordered_map<int64_t, ptr_t> m_threads;
-	const ptr_t m_nullptr_ret;          // needed for returning a reference
 	mutable std::shared_mutex m_mutex;  // Protects m_threads
 };

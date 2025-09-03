@@ -265,9 +265,7 @@ std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::add_thread(
         bool from_scap_proctable) {
 	/* We have no more space */
 	{
-		// Lock ordering: THREADTABLE -> CONFIG (CONFIG is not in our main order, but this is
-		// read-only)
-		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+		// Lock ordering: CONFIG (CONFIG is not in our main order, but this is read-only)
 		std::unique_lock<std::mutex> config_lock(m_config_mutex);
 		if(m_threadtable.size() >= m_max_thread_table_size && threadinfo->m_pid != m_sinsp_pid) {
 			if(m_sinsp_stats_v2 != nullptr) {
@@ -927,11 +925,7 @@ threadinfo_map_t::ptr_t sinsp_thread_manager::find_thread(int64_t tid, bool look
 		}
 	}
 
-	threadinfo_map_t::ptr_t thr = nullptr;
-	{
-		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
-		thr = m_threadtable.get_ref(tid);
-	}
+	threadinfo_map_t::ptr_t thr = m_threadtable.get_ref(tid);
 
 	if(thr) {
 		if(m_sinsp_stats_v2 != nullptr) {
@@ -963,9 +957,7 @@ threadinfo_map_t::ptr_t sinsp_thread_manager::get_thread_ref(const int64_t tid,
 	if(!sinsp_proc && query_os_if_not_found) {
 		// Check table size limit before proceeding
 		{
-			// Lock ordering: THREADTABLE -> CONFIG (CONFIG is not in main order, but this is
-			// read-only)
-			std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
+			// Lock ordering: CONFIG (CONFIG is not in main order, but this is read-only)
 			std::unique_lock<std::mutex> config_lock(m_config_mutex);
 			if(m_threadtable.size() >= m_max_thread_table_size && tid != m_sinsp_pid) {
 				return nullptr;
@@ -1082,7 +1074,6 @@ std::unique_ptr<libsinsp::state::table_entry> sinsp_thread_manager::new_entry() 
 // Thread hierarchy operations (eliminates cross-class deadlocks)
 
 sinsp_threadinfo* sinsp_thread_manager::get_parent_thread(int64_t tid) {
-	std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
 	auto thread = m_threadtable.get_ref(tid);
 	if(!thread) {
 		return nullptr;
@@ -1091,7 +1082,6 @@ sinsp_threadinfo* sinsp_thread_manager::get_parent_thread(int64_t tid) {
 }
 
 sinsp_threadinfo* sinsp_thread_manager::get_main_thread(int64_t tid) {
-	std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
 	auto thread = m_threadtable.get_ref(tid);
 	if(!thread) {
 		return nullptr;
@@ -1113,8 +1103,6 @@ sinsp_threadinfo* sinsp_thread_manager::get_main_thread(int64_t tid) {
 }
 
 void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper_tid) {
-	std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
-
 	auto thread = m_threadtable.get_ref(tid);
 	if(!thread || thread->m_children.size() == 0) {
 		return;
@@ -1147,8 +1135,6 @@ void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper
 }
 
 void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
-	std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
-
 	auto thread = m_threadtable.get_ref(tid);
 	if(!thread) {
 		return;
@@ -1175,8 +1161,6 @@ void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
 }
 
 sinsp_threadinfo* sinsp_thread_manager::get_ancestor_process(int64_t tid, uint32_t n) {
-	std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
-
 	auto mt = get_main_thread(tid);
 	for(uint32_t i = 0; i < n; i++) {
 		if(mt == nullptr) {

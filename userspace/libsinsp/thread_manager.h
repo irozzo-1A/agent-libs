@@ -43,7 +43,7 @@ class sinsp_observer;
 //
 // LOCK ORDERING: To prevent deadlocks, always acquire locks in this order:
 // 1. m_thread_groups_mutex (M0)
-// 2. m_threadtable_mutex (M1) - protects the thread table object
+// 2. m_threadtable_mutex (M1) - protects the thread table object (only for complex operations)
 // 3. m_threadtable.m_mutex (M2) - protects the internal threads map
 // 4. Other mutexes
 //
@@ -52,6 +52,9 @@ class sinsp_observer;
 //
 // IMPORTANT: Never acquire M2 while holding M0, as this can cause deadlocks
 // with the clear() method which acquires M0 -> M1 -> M2.
+//
+// NOTE: Simple read operations (get_thread_count, find_thread, etc.) now use only M2
+// and don't require M1, improving performance for common operations.
 ///////////////////////////////////////////////////////////////////////////////
 class SINSP_PUBLIC sinsp_thread_manager : public libsinsp::state::built_in_table<int64_t>,
                                           public libsinsp::state::sinsp_table_owner {
@@ -147,7 +150,6 @@ public:
 	void dump_threads_to_file(scap_dumper_t* dumper);
 
 	uint32_t get_thread_count() {
-		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
 		return (uint32_t)m_threadtable.size();
 	}
 
@@ -202,7 +204,6 @@ public:
 	// ---- libsinsp::state::table implementation ----
 
 	size_t entries_count() const override {
-		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
 		return m_threadtable.size();
 	}
 
@@ -214,7 +215,6 @@ public:
 	std::unique_ptr<libsinsp::state::table_entry> new_entry() const override;
 
 	bool foreach_entry(std::function<bool(libsinsp::state::table_entry& e)> pred) override {
-		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
 		return m_threadtable.loop([&pred](sinsp_threadinfo& e) { return pred(e); });
 	}
 

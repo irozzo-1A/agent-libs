@@ -405,7 +405,7 @@ sinsp_threadinfo* sinsp_thread_manager::find_new_reaper(sinsp_threadinfo* tinfo)
 	return nullptr;
 }
 
-void sinsp_thread_manager::remove_main_thread_fdtable(sinsp_threadinfo* main_thread) const {
+void sinsp_thread_manager::remove_main_thread_fdtable(std::shared_ptr<sinsp_threadinfo> main_thread) const {
 	// All this logic is intended to just call the `m_observer->on_erase_fd` callback, so just
 	// returns if there is no observer.
 	if(m_observer == nullptr) {
@@ -425,7 +425,7 @@ void sinsp_thread_manager::remove_main_thread_fdtable(sinsp_threadinfo* main_thr
 
 	erase_fd_params eparams;
 	eparams.m_remove_from_table = false;
-	eparams.m_tinfo = main_thread;
+	eparams.m_tinfo = main_thread.get();
 
 	fd_table_ptr->loop([&](int64_t fd, sinsp_fdinfo& fdinfo) {
 		// The canceled fd should always be deleted immediately, so if it appears here it means we
@@ -444,7 +444,7 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 	// Step 1: Lock thread table for read (highest priority)
 	{
 		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
-		thread_to_remove = m_threadtable.get_ref(tid);
+		thread_to_remove = m_threadtable.get(tid);
 	}
 
 	/* This should never happen but just to be sure. */
@@ -925,7 +925,7 @@ threadinfo_map_t::ptr_t sinsp_thread_manager::find_thread(int64_t tid, bool look
 		}
 	}
 
-	threadinfo_map_t::ptr_t thr = m_threadtable.get_ref(tid);
+	threadinfo_map_t::ptr_t thr = m_threadtable.get(tid);
 
 	if(thr) {
 		if(m_sinsp_stats_v2 != nullptr) {
@@ -1073,22 +1073,22 @@ std::unique_ptr<libsinsp::state::table_entry> sinsp_thread_manager::new_entry() 
 
 // Thread hierarchy operations (eliminates cross-class deadlocks)
 
-sinsp_threadinfo* sinsp_thread_manager::get_parent_thread(int64_t tid) {
-	auto thread = m_threadtable.get_ref(tid);
+std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_parent_thread(int64_t tid) {
+	auto thread = m_threadtable.get(tid);
 	if(!thread) {
 		return nullptr;
 	}
-	return m_threadtable.get_ref(thread->m_ptid).get();
+	return m_threadtable.get(thread->m_ptid);
 }
 
-sinsp_threadinfo* sinsp_thread_manager::get_main_thread(int64_t tid) {
-	auto thread = m_threadtable.get_ref(tid);
+std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_main_thread(int64_t tid) {
+	auto thread = m_threadtable.get(tid);
 	if(!thread) {
 		return nullptr;
 	}
 
 	if(thread->is_main_thread()) {
-		return thread.get();
+		return thread;
 	}
 
 	if(thread->m_tginfo == nullptr) {
@@ -1103,14 +1103,14 @@ sinsp_threadinfo* sinsp_thread_manager::get_main_thread(int64_t tid) {
 }
 
 void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper_tid) {
-	auto thread = m_threadtable.get_ref(tid);
+	auto thread = m_threadtable.get(tid);
 	if(!thread || thread->m_children.size() == 0) {
 		return;
 	}
 
 	std::shared_ptr<sinsp_threadinfo> reaper;
 	if(reaper_tid > 0) {
-		reaper = m_threadtable.get_ref(reaper_tid);
+		reaper = m_threadtable.get(reaper_tid);
 		if(reaper == thread) {
 			throw sinsp_exception(
 			        "the current process is reaper of itself, this should never happen!");
@@ -1135,12 +1135,12 @@ void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper
 }
 
 void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
-	auto thread = m_threadtable.get_ref(tid);
+	auto thread = m_threadtable.get(tid);
 	if(!thread) {
 		return;
 	}
 
-	auto parent = m_threadtable.get_ref(thread->m_ptid);
+	auto parent = m_threadtable.get(thread->m_ptid);
 	if(parent == nullptr) {
 		return;
 	}
@@ -1160,7 +1160,7 @@ void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
 	}
 }
 
-sinsp_threadinfo* sinsp_thread_manager::get_ancestor_process(int64_t tid, uint32_t n) {
+std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_ancestor_process(int64_t tid, uint32_t n) {
 	auto mt = get_main_thread(tid);
 	for(uint32_t i = 0; i < n; i++) {
 		if(mt == nullptr) {

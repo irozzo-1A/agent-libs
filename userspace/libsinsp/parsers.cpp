@@ -3734,7 +3734,7 @@ void sinsp_parser::set_evt_thread_user(sinsp_evt &evt, const sinsp_evt_param &eu
 		return;
 	}
 
-	sinsp_threadinfo *ti = evt.get_thread_info();
+	auto ti = evt.get_thread_info();
 	if(ti == nullptr) {
 		return;
 	}
@@ -3747,7 +3747,7 @@ void sinsp_parser::set_evt_thread_group(sinsp_evt &evt, const sinsp_evt_param &e
 		return;
 	}
 
-	sinsp_threadinfo *ti = evt.get_thread_info();
+	auto ti = evt.get_thread_info();
 	if(ti == nullptr) {
 		return;
 	}

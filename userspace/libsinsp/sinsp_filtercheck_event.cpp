@@ -1494,7 +1494,7 @@ uint8_t* sinsp_filter_check_event::extract_single(sinsp_evt* evt,
 		if(m_field_id == TYPE_COUNT_THREADINFO) {
 			m_val.u32 = 1;
 		} else if(m_field_id == TYPE_COUNT_PROCINFO) {
-			sinsp_threadinfo* tinfo = evt->get_thread_info();
+			auto tinfo = evt->get_thread_info();
 			if(tinfo != NULL && tinfo->is_main_thread()) {
 				m_val.u32 = 1;
 			}

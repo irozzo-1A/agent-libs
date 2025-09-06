@@ -1050,7 +1050,7 @@ event_processing_stats process_events_loop(
 								<< "%" << std::endl;
 				}
 			}
-			sinsp_threadinfo* thread = ev->get_thread_info();
+			auto thread = ev->get_thread_info();
 			if(!perftest_mode && (!thread || all_threads || thread->is_main_thread())) {
 				dump_func(inspector, ev, buffer_h);
 			}

@@ -348,9 +348,9 @@ uint8_t* sinsp_filter_check_fspath::extract_single(sinsp_evt* evt,
 	// For the non-raw fields, if the path is not absolute,
 	// prepend the cwd of the threadinfo or the dirfd to the path.
 	if((m_field_id == TYPE_NAME || m_field_id == TYPE_SOURCE || m_field_id == TYPE_TARGET)) {
-		sinsp_threadinfo* tinfo = evt->get_thread_info();
+		auto tinfo = evt->get_thread_info();
 
-		if(tinfo == NULL) {
+		if(tinfo == nullptr) {
 			return NULL;
 		}
 

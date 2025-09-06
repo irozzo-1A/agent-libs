@@ -275,34 +275,9 @@ public:
 	/*!
 	  \brief Get the main thread of the process containing this thread.
 	*/
-	inline sinsp_threadinfo* get_main_thread() {
-		if(is_main_thread()) {
-			return this;
-		}
+	std::shared_ptr<sinsp_threadinfo> get_main_thread();
 
-		// This is possible when we have invalid threads
-		if(m_tginfo == nullptr) {
-			return nullptr;
-		}
-
-		// If we have the main thread in the group, it is always the first one
-		auto possible_main = m_tginfo->get_first_thread();
-		if(possible_main == nullptr) {
-			return nullptr;
-		}
-
-		// Avoid calling is_main_thread() on the same object to prevent deadlock
-		if(possible_main == this) {
-			return nullptr;  // We already checked is_main_thread() above
-		}
-
-		if(!possible_main->is_main_thread()) {
-			return nullptr;
-		}
-		return possible_main;
-	}
-
-	inline const sinsp_threadinfo* get_main_thread() const {
+	inline std::shared_ptr<const sinsp_threadinfo> get_main_thread() const {
 		return const_cast<sinsp_threadinfo*>(this)->get_main_thread();
 	}
 
@@ -310,44 +285,16 @@ public:
 	  \brief Get the main thread of the process containing this thread (unlocked version).
 	  This method should only be called from methods that already hold the lock.
 	*/
-	inline sinsp_threadinfo* get_main_thread_unlocked() {
-		// Check if this thread is the main thread (without acquiring lock)
-		if((m_tid == m_pid) || m_flags & PPM_CL_IS_MAIN_THREAD) {
-			return this;
-		}
+	std::shared_ptr<sinsp_threadinfo> get_main_thread_unlocked();
 
-		// This is possible when we have invalid threads
-		if(m_tginfo == nullptr) {
-			return nullptr;
-		}
-
-		// If we have the main thread in the group, it is always the first one
-		auto possible_main = m_tginfo->get_first_thread();
-		if(possible_main == nullptr) {
-			return nullptr;
-		}
-
-		// Avoid calling is_main_thread() on the same object to prevent deadlock
-		if(possible_main == this) {
-			return nullptr;  // We already checked is_main_thread() above
-		}
-
-		// Check if possible_main is the main thread (without acquiring lock)
-		if((possible_main->m_tid == possible_main->m_pid) ||
-		   possible_main->m_flags & PPM_CL_IS_MAIN_THREAD) {
-			return possible_main;
-		}
-		return nullptr;
-	}
-
-	inline const sinsp_threadinfo* get_main_thread_unlocked() const {
+	inline std::shared_ptr<const sinsp_threadinfo> get_main_thread_unlocked() const {
 		return const_cast<sinsp_threadinfo*>(this)->get_main_thread_unlocked();
 	}
 
 	/*!
 	  \brief Get the thread that launched this thread's process.
 	*/
-	sinsp_threadinfo* get_parent_thread();
+	std::shared_ptr<sinsp_threadinfo> get_parent_thread();
 
 	/*!
 	  \brief Get the process that launched this thread's process (its parent) or any of its
@@ -357,7 +304,7 @@ public:
 
 	  \return Pointer to the threadinfo or NULL if it doesn't exist
 	*/
-	sinsp_threadinfo* get_ancestor_process(uint32_t n = 1);
+	std::shared_ptr<sinsp_threadinfo> get_ancestor_process(uint32_t n = 1);
 
 	/*!
 	  \brief Retrieve information about one of this thread/process FDs.
@@ -369,7 +316,7 @@ public:
 	*/
 	inline std::shared_ptr<sinsp_fdinfo> get_fd(int64_t fd) {
 		if(fd < 0) {
-			return NULL;
+			return nullptr;
 		}
 
 		std::shared_lock<std::shared_mutex> lock(m_mutex);
@@ -387,7 +334,7 @@ public:
 			}
 		}
 
-		return NULL;
+		return nullptr;
 	}
 
 	/*!
@@ -770,7 +717,7 @@ private:
 		if(!(m_flags & PPM_CL_CLONE_FILES)) {
 			return m_fdtable;
 		} else {
-			sinsp_threadinfo* root = get_main_thread_unlocked();
+			std::shared_ptr<sinsp_threadinfo> root = get_main_thread_unlocked();
 			return (root == nullptr) ? nullptr : root->get_fdtable();
 		}
 	}
@@ -779,7 +726,7 @@ private:
 		if(!(m_flags & PPM_CL_CLONE_FILES)) {
 			return m_fdtable;
 		} else {
-			const sinsp_threadinfo* root = get_main_thread_unlocked();
+			std::shared_ptr<const sinsp_threadinfo> root = get_main_thread_unlocked();
 			return (root == nullptr) ? nullptr : root->get_fdtable();
 		}
 	}
@@ -815,29 +762,16 @@ public:
 
 	inline ptr_t put(const ptr_t& tinfo) {
 		std::unique_lock<std::shared_mutex> lock(m_mutex);
-		// Use find() + insert() pattern to avoid race conditions with operator[]
-		auto it = m_threads.find(tinfo->m_tid);
-		if(it == m_threads.end()) {
-			// Insert new entry
-			auto result = m_threads.emplace(tinfo->m_tid, tinfo);
-			return result.first->second;  // Return a copy, not a reference
+		// Try inserting the thread info into the map, if it already exists do not override
+		auto it = m_threads.try_emplace(tinfo->m_tid, tinfo);
+		if(it.second) {
+			return it.first->second;
 		} else {
-			// Update existing entry - the mutex protects this operation
-			it->second = tinfo;
-			return it->second;  // Return a copy, not a reference
+			return m_threads[tinfo->m_tid];
 		}
 	}
 
-	inline sinsp_threadinfo* get(uint64_t tid) {
-		std::shared_lock<std::shared_mutex> lock(m_mutex);
-		auto it = m_threads.find(tid);
-		if(it == m_threads.end()) {
-			return nullptr;
-		}
-		return it->second.get();
-	}
-
-	inline ptr_t get_ref(uint64_t tid) {
+	inline ptr_t get(uint64_t tid) {
 		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		auto it = m_threads.find(tid);
 		if(it == m_threads.end()) {

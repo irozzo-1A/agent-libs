@@ -106,7 +106,7 @@ public:
 		}
 	}
 
-	inline sinsp_threadinfo* get_first_thread() const { return m_threads.front().lock().get(); }
+	inline std::shared_ptr<sinsp_threadinfo> get_first_thread() const { return m_threads.front().lock(); }
 
 private:
 	int64_t m_pid; /* unsigned if we want to use `-1` as an invalid value */

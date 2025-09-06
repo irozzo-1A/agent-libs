@@ -439,7 +439,7 @@ public:
 	   set to true, scan the /proc file system to find process information in
 	   case the thread is not in the table.
 	*/
-	sinsp_threadinfo* get_thread_info(bool query_os_if_not_found = false);
+	std::shared_ptr<sinsp_threadinfo> get_thread_info(bool query_os_if_not_found = false);
 
 	/*!
 	  \brief Return the information about the FD on which this event operated.

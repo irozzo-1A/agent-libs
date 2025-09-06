@@ -112,13 +112,12 @@ uint32_t sinsp_evt::get_iosize() const {
 	return m_iosize;
 }
 
-sinsp_threadinfo *sinsp_evt::get_thread_info(bool query_os_if_not_found) {
+std::shared_ptr<sinsp_threadinfo> sinsp_evt::get_thread_info(bool query_os_if_not_found) {
 	if(m_tinfo) {
-		return m_tinfo.get();
+		return m_tinfo;
 	}
 
-	return m_inspector->m_thread_manager->get_thread_ref(m_pevt->tid, query_os_if_not_found, false)
-	        .get();
+	return m_inspector->m_thread_manager->get_thread_ref(m_pevt->tid, query_os_if_not_found, false);
 }
 
 int64_t sinsp_evt::get_fd_num() const {
@@ -500,8 +499,8 @@ int sinsp_evt::render_fd_json(Json::Value *ret,
                               int64_t fd,
                               const char **resolved_str,
                               sinsp_evt::param_fmt fmt) {
-	sinsp_threadinfo *tinfo = get_thread_info();
-	if(tinfo == NULL) {
+	auto tinfo = get_thread_info();
+	if(tinfo == nullptr) {
 		return 0;
 	}
 
@@ -570,8 +569,8 @@ char *sinsp_evt::render_fd(int64_t fd, const char **resolved_str, sinsp_evt::par
 	//
 	snprintf(&m_paramstr_storage[0], m_paramstr_storage.size(), "%" PRId64, fd);
 
-	sinsp_threadinfo *tinfo = get_thread_info();
-	if(tinfo == NULL) {
+	auto tinfo = get_thread_info();
+	if(tinfo == nullptr) {
 		//
 		// no thread. Definitely can't resolve the fd, just return the number
 		//
@@ -693,7 +692,7 @@ std::string sinsp_evt::get_base_dir(uint32_t id, sinsp_threadinfo *tinfo) {
 const char *sinsp_evt::get_param_as_str(uint32_t id,
                                         const char **resolved_str,
                                         sinsp_evt::param_fmt fmt) {
-	char *prfmt = NULL;
+	char *prfmt = nullptr;
 	const ppm_param_info *param_info = NULL;
 	std::optional<sinsp_evt_param> dyn_param;
 	std::string_view s;
@@ -801,10 +800,10 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 		         "%" PRId64,
 		         param->as<int64_t>());
 
-		sinsp_threadinfo *atinfo =
+		auto atinfo =
 		        m_inspector->m_thread_manager->get_thread_ref(param->as<int64_t>(), false, true)
 		                .get();
-		if(atinfo != NULL) {
+		if(atinfo != nullptr) {
 			std::string &tcomm = atinfo->m_comm;
 
 			//
@@ -882,11 +881,11 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 
 		strcpy_sanitized(&m_paramstr_storage[0], path.data(), path.length() + 1);
 
-		sinsp_threadinfo *tinfo = get_thread_info();
+		auto tinfo = get_thread_info();
 
 		if(tinfo) {
 			if(path != "<NA>") {
-				std::string cwd = get_base_dir(id, tinfo);
+				std::string cwd = get_base_dir(id, tinfo.get());
 
 				if(path.length() + cwd.length() + 1 >= m_resolved_paramstr_storage.size()) {
 					m_resolved_paramstr_storage.resize(path.length() + cwd.length() + 2, 0);
@@ -965,7 +964,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 				ipv4serverinfo addr;
 				memcpy(&addr.m_ip, param_data + 1, sizeof(addr.m_ip));
 				memcpy(&addr.m_port, param_data + 5, sizeof(addr.m_port));
-				addr.m_l4proto = (m_fdinfo != NULL) ? m_fdinfo->get_l4proto() : SCAP_L4_UNKNOWN;
+				addr.m_l4proto = (m_fdinfo != nullptr) ? m_fdinfo->get_l4proto() : SCAP_L4_UNKNOWN;
 				std::string straddr = ipv4serveraddr_to_string(
 				        addr,
 				        m_inspector->is_hostname_and_port_resolution_enabled());
@@ -979,7 +978,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 				ipv6serverinfo addr;
 				memcpy(addr.m_ip.m_b, param_data + 1, sizeof(addr.m_ip.m_b));
 				memcpy(&addr.m_port, param_data + 17, sizeof(addr.m_port));
-				addr.m_l4proto = (m_fdinfo != NULL) ? m_fdinfo->get_l4proto() : SCAP_L4_UNKNOWN;
+				addr.m_l4proto = (m_fdinfo != nullptr) ? m_fdinfo->get_l4proto() : SCAP_L4_UNKNOWN;
 				std::string straddr = ipv6serveraddr_to_string(
 				        addr,
 				        m_inspector->is_hostname_and_port_resolution_enabled());
@@ -1005,7 +1004,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 				memcpy(&addr.m_fields.m_dip, param_data + 7, sizeof(uint32_t));
 				memcpy(&addr.m_fields.m_dport, param_data + 11, sizeof(uint16_t));
 				addr.m_fields.m_l4proto =
-				        (m_fdinfo != NULL) ? m_fdinfo->get_l4proto() : SCAP_L4_UNKNOWN;
+				        (m_fdinfo != nullptr) ? m_fdinfo->get_l4proto() : SCAP_L4_UNKNOWN;
 				std::string straddr =
 				        ipv4tuple_to_string(addr,
 				                            m_inspector->is_hostname_and_port_resolution_enabled());
@@ -1029,7 +1028,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 					memcpy(&addr.m_fields.m_dip, dip, sizeof(uint32_t));
 					memcpy(&addr.m_fields.m_dport, param_data + 35, sizeof(uint16_t));
 					addr.m_fields.m_l4proto =
-					        (m_fdinfo != NULL) ? m_fdinfo->get_l4proto() : SCAP_L4_UNKNOWN;
+					        (m_fdinfo != nullptr) ? m_fdinfo->get_l4proto() : SCAP_L4_UNKNOWN;
 					std::string straddr = ipv4tuple_to_string(
 					        addr,
 					        m_inspector->is_hostname_and_port_resolution_enabled());
@@ -1053,14 +1052,14 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 						         srcstr,
 						         port_to_string(
 						                 srcport,
-						                 (m_fdinfo != NULL) ? m_fdinfo->get_l4proto()
+						                 (m_fdinfo != nullptr) ? m_fdinfo->get_l4proto()
 						                                    : SCAP_L4_UNKNOWN,
 						                 m_inspector->is_hostname_and_port_resolution_enabled())
 						                 .c_str(),
 						         dststr,
 						         port_to_string(
 						                 dstport,
-						                 (m_fdinfo != NULL) ? m_fdinfo->get_l4proto()
+						                 (m_fdinfo != nullptr) ? m_fdinfo->get_l4proto()
 						                                    : SCAP_L4_UNKNOWN,
 						                 m_inspector->is_hostname_and_port_resolution_enabled())
 						                 .c_str());
@@ -1096,7 +1095,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 		break;
 	}
 	case PT_FDLIST: {
-		sinsp_threadinfo *tinfo = get_thread_info();
+		auto tinfo = get_thread_info();
 		if(!tinfo) {
 			break;
 		}
@@ -1332,7 +1331,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 			// the threadinfo one yet;
 			// therefore we cannot directly use tinfo->m_user here.
 			snprintf(&m_paramstr_storage[0], m_paramstr_storage.size(), "%d", val);
-			sinsp_threadinfo *tinfo = get_thread_info();
+			auto tinfo = get_thread_info();
 			scap_userinfo *user_info = NULL;
 			if(tinfo) {
 				user_info =
@@ -1362,13 +1361,13 @@ const char *sinsp_evt::get_param_as_str(uint32_t id,
 			// the threadinfo one yet;
 			// therefore we cannot directly use tinfo->m_group here.
 			snprintf(&m_paramstr_storage[0], m_paramstr_storage.size(), "%d", val);
-			sinsp_threadinfo *tinfo = get_thread_info();
-			scap_groupinfo *group_info = NULL;
+			auto tinfo = get_thread_info();
+			scap_groupinfo *group_info = nullptr;
 			if(tinfo) {
 				group_info =
 				        m_inspector->m_usergroup_manager->get_group(tinfo->get_container_id(), val);
 			}
-			if(group_info != NULL) {
+			if(group_info != nullptr) {
 				strcpy_sanitized(&m_resolved_paramstr_storage[0],
 				                 group_info->name,
 				                 (uint32_t)m_resolved_paramstr_storage.size());

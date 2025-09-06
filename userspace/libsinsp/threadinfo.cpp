@@ -700,11 +700,11 @@ void sinsp_threadinfo::set_cgroups(const cgroups_t& cgroups) {
 	m_cgroups = cgroups;
 }
 
-sinsp_threadinfo* sinsp_threadinfo::get_parent_thread() {
-	return m_params->thread_manager->get_thread_ref(m_ptid).get();
+std::shared_ptr<sinsp_threadinfo> sinsp_threadinfo::get_parent_thread() {
+	return m_params->thread_manager->get_thread_ref(m_ptid);
 }
 
-sinsp_threadinfo* sinsp_threadinfo::get_ancestor_process(uint32_t n) {
+std::shared_ptr<sinsp_threadinfo> sinsp_threadinfo::get_ancestor_process(uint32_t n) {
 	// Use thread manager method to eliminate cross-class deadlock risk
 	return m_params->thread_manager->get_ancestor_process(m_tid, n);
 }
@@ -804,11 +804,68 @@ bool sinsp_threadinfo::is_lastevent_data_valid() const {
 	return (m_lastevent_cpuid.load() != (uint16_t)-1);
 }
 
+std::shared_ptr<sinsp_threadinfo> sinsp_threadinfo::get_main_thread() {
+	if(is_main_thread()) {
+		return m_params->thread_manager->get_thread_ref(m_tid);
+	}
+
+	// This is possible when we have invalid threads
+	if(m_tginfo == nullptr) {
+		return nullptr;
+	}
+
+	// If we have the main thread in the group, it is always the first one
+	auto possible_main = m_tginfo->get_first_thread();
+	if(possible_main == nullptr) {
+		return nullptr;
+	}
+
+	// Avoid calling is_main_thread() on the same object to prevent deadlock
+	if(possible_main.get() == this) {
+		return nullptr;  // We already checked is_main_thread() above
+	}
+
+	if(!possible_main->is_main_thread()) {
+		return nullptr;
+	}
+	return possible_main;
+}
+
+std::shared_ptr<sinsp_threadinfo> sinsp_threadinfo::get_main_thread_unlocked() {
+	// Check if this thread is the main thread (without acquiring lock)
+	if((m_tid == m_pid) || m_flags & PPM_CL_IS_MAIN_THREAD) {
+		return m_params->thread_manager->get_thread_ref(m_tid);
+	}
+
+	// This is possible when we have invalid threads
+	if(m_tginfo == nullptr) {
+		return nullptr;
+	}
+
+	// If we have the main thread in the group, it is always the first one
+	auto possible_main = m_tginfo->get_first_thread();
+	if(possible_main == nullptr) {
+		return nullptr;
+	}
+
+	// Avoid calling is_main_thread() on the same object to prevent deadlock
+	if(possible_main.get() == this) {
+		return nullptr;  // We already checked is_main_thread() above
+	}
+
+	// Check if possible_main is the main thread (without acquiring lock)
+	if((possible_main->m_tid == possible_main->m_pid) ||
+	   possible_main->m_flags & PPM_CL_IS_MAIN_THREAD) {
+		return possible_main;
+	}
+	return nullptr;
+}
+
 sinsp_threadinfo* sinsp_threadinfo::get_cwd_root() {
 	if(!(m_flags & PPM_CL_CLONE_FS)) {
 		return this;
 	} else {
-		return get_main_thread();
+		return get_main_thread().get();
 	}
 }
 
@@ -818,7 +875,7 @@ std::string sinsp_threadinfo::get_cwd() {
 	// Also glibc and muslc use always
 	// CLONE_THREAD|CLONE_FS so let's use
 	// get_main_thread() for now
-	sinsp_threadinfo* tinfo = get_main_thread();
+	auto tinfo = get_main_thread();
 
 	if(tinfo) {
 		return tinfo->m_cwd;
@@ -829,7 +886,7 @@ std::string sinsp_threadinfo::get_cwd() {
 }
 
 void sinsp_threadinfo::update_cwd(std::string_view cwd) {
-	sinsp_threadinfo* tinfo = get_main_thread();
+	auto tinfo = get_main_thread();
 
 	if(tinfo == nullptr) {
 		return;
@@ -962,14 +1019,15 @@ void sinsp_threadinfo::traverse_parent_state(visitor_func_t& visitor) {
 	// before slow is NULL there's a loop.
 
 	// Use thread manager methods to eliminate cross-class deadlock risk
-	sinsp_threadinfo *slow = m_params->thread_manager->get_parent_thread(m_tid), *fast = slow;
+	auto slow = m_params->thread_manager->get_parent_thread(m_tid);
+	auto fast = slow;
 
 	// Move fast to its parent
 	fast = (fast ? m_params->thread_manager->get_parent_thread(fast->m_tid) : fast);
 
 	// The slow pointer must be valid and not have a tid of -1.
 	while(slow && slow->m_tid != -1) {
-		if(!visitor(slow)) {
+		if(!visitor(slow.get())) {
 			break;
 		}
 

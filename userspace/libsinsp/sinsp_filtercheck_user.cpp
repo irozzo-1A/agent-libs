@@ -81,8 +81,8 @@ uint8_t* sinsp_filter_check_user::extract_single(sinsp_evt* evt,
                                                  uint32_t* len,
                                                  bool sanitize_strings) {
 	*len = 0;
-	sinsp_threadinfo* tinfo = evt->get_thread_info();
-	if(tinfo == NULL) {
+	auto tinfo = evt->get_thread_info();
+	if(tinfo == nullptr) {
 		return NULL;
 	}
 

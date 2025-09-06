@@ -330,16 +330,16 @@ public:
 	                                                      bool resolve_hostname_and_port);
 
 	// Thread hierarchy operations (eliminates cross-class deadlocks)
-	sinsp_threadinfo* get_parent_thread(int64_t tid);
-	sinsp_threadinfo* get_main_thread(int64_t tid);
+	std::shared_ptr<sinsp_threadinfo> get_parent_thread(int64_t tid);
+	std::shared_ptr<sinsp_threadinfo> get_main_thread(int64_t tid);
 	void assign_children_to_reaper(int64_t tid, int64_t reaper_tid);
 	void remove_child_from_parent(int64_t tid);
-	sinsp_threadinfo* get_ancestor_process(int64_t tid, uint32_t n = 1);
+	std::shared_ptr<sinsp_threadinfo> get_ancestor_process(int64_t tid, uint32_t n = 1);
 
 private:
 	inline void clear_thread_pointers(sinsp_threadinfo& threadinfo);
 	void free_dump_fdinfos(std::vector<scap_fdinfo*>* fdinfos_to_free);
-	void remove_main_thread_fdtable(sinsp_threadinfo* main_thread) const;
+	void remove_main_thread_fdtable(std::shared_ptr<sinsp_threadinfo> main_thread) const;
 
 	void maybe_log_max_lookup(int64_t tid, bool scan_sockets, uint64_t period);
 

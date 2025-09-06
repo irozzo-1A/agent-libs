@@ -110,7 +110,7 @@ uint8_t *sinsp_filter_check_fdlist::extract_single(sinsp_evt *evt,
 	const char *payload = parinfo->data();
 	uint16_t nfds = *(uint16_t *)payload;
 	uint32_t pos = 2;
-	sinsp_threadinfo *tinfo = evt->get_thread_info();
+	auto tinfo = evt->get_thread_info();
 	if(!tinfo) {
 		return NULL;
 	}
@@ -128,7 +128,7 @@ uint8_t *sinsp_filter_check_fdlist::extract_single(sinsp_evt *evt,
 			m_strval += to_string(fd);
 		} break;
 		case TYPE_FDNAMES: {
-			if(fdinfo != NULL) {
+			if(fdinfo != nullptr) {
 				if(fdinfo->m_name != "") {
 					m_strval += fdinfo->m_name;
 				} else {
@@ -139,7 +139,7 @@ uint8_t *sinsp_filter_check_fdlist::extract_single(sinsp_evt *evt,
 			}
 		} break;
 		case TYPE_CLIENTIPS: {
-			if(fdinfo != NULL) {
+			if(fdinfo != nullptr) {
 				char m_addrbuff[100];
 				if(fdinfo->m_type == SCAP_FD_IPV4_SOCK) {
 					inet_ntop(AF_INET,
@@ -161,7 +161,7 @@ uint8_t *sinsp_filter_check_fdlist::extract_single(sinsp_evt *evt,
 			add_comma = false;
 		} break;
 		case TYPE_SERVERIPS: {
-			if(fdinfo != NULL) {
+			if(fdinfo != nullptr) {
 				char m_addrbuff[100];
 				if(fdinfo->m_type == SCAP_FD_IPV4_SOCK) {
 					inet_ntop(AF_INET,
@@ -197,7 +197,7 @@ uint8_t *sinsp_filter_check_fdlist::extract_single(sinsp_evt *evt,
 			add_comma = false;
 		} break;
 		case TYPE_CLIENTPORTS: {
-			if(fdinfo != NULL) {
+			if(fdinfo != nullptr) {
 				if(fdinfo->m_type == SCAP_FD_IPV4_SOCK) {
 					m_strval += to_string(fdinfo->m_sockinfo.m_ipv4info.m_fields.m_sport);
 					break;
@@ -210,7 +210,7 @@ uint8_t *sinsp_filter_check_fdlist::extract_single(sinsp_evt *evt,
 			add_comma = false;
 		}
 		case TYPE_SERVERPORTS: {
-			if(fdinfo != NULL) {
+			if(fdinfo != nullptr) {
 				if(fdinfo->m_type == SCAP_FD_IPV4_SOCK) {
 					m_strval += to_string(fdinfo->m_sockinfo.m_ipv4info.m_fields.m_dport);
 					break;

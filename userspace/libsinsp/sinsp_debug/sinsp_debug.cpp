@@ -55,7 +55,7 @@ void display_thread_lineage(sinsp_threadinfo* tinfo) {
 
 	printf("📜 Task Lineage for tid: %ld\n", tinfo->m_tid);
 	printf("⬇️ %s\n", thread_info_to_string(tinfo).c_str());
-
+	return;
 	/* If the thread is invalid it has no parent */
 	if(tinfo->is_invalid() || tinfo->m_ptid == 0) {
 		printf("END\n\n");
@@ -129,13 +129,13 @@ int main(int argc, char** argv) {
 				       child_tid,
 				       ev->get_num());
 			}
-			display_thread_lineage(tinfo);
+			display_thread_lineage(tinfo.get());
 		} break;
 
 		case PPME_SYSCALL_EXECVE_19_X:
 		case PPME_SYSCALL_EXECVEAT_X:
 			printf("🟢 EXECVE EXIT: evt_num(%ld)\n", ev->get_num());
-			display_thread_lineage(tinfo);
+			display_thread_lineage(tinfo.get());
 			break;
 
 		case PPME_PROCEXIT_E:
@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
 					       child_shr->m_ptid);
 				}
 			}
-			display_thread_lineage(tinfo);
+			display_thread_lineage(tinfo.get());
 			break;
 
 		default:

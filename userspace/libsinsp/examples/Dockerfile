@@ -54,6 +54,7 @@ WORKDIR /workspace
 # Copy source code
 COPY . .
 
+RUN vcpkg install
 # Create build directory and build
 RUN cmake -B build -S . -G "Unix Makefiles" --preset sinsp-example-docker-build && \
     cmake --build build -j$(nproc)

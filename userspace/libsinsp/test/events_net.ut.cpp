@@ -62,8 +62,6 @@ TEST_F(sinsp_with_test_input, net_ipv4_connect) {
 	add_default_init_thread();
 	open_inspector();
 	sinsp_evt* evt = NULL;
-	sinsp_fdinfo* fdinfo = NULL;
-	sinsp_threadinfo* tinfo = NULL;
 	char ipv4_string[DEFAULT_IP_STRING_SIZE];
 
 	generate_socket_events();
@@ -84,7 +82,7 @@ TEST_F(sinsp_with_test_input, net_ipv4_connect) {
 	        scap_const_sized_buffer{server_sockaddr.data(), server_sockaddr.size()});
 
 	/* See the `reset` logic for enter events with `EF_USES_FD` flag */
-	tinfo = evt->get_thread_info(false);
+	auto tinfo = evt->get_thread_info(false);
 	ASSERT_NE(tinfo, nullptr);
 	ASSERT_EQ(tinfo->m_lastevent_fd, sinsp_test_input::socket_params::default_fd);
 	ASSERT_EQ(tinfo->m_lastevent_ts, evt->get_ts());
@@ -94,7 +92,7 @@ TEST_F(sinsp_with_test_input, net_ipv4_connect) {
 	 * added the fdinfo into the thread. See `reset` logic, the fdinfo is recovered from the
 	 * `client_fd` (first parameter).
 	 */
-	fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_TRUE(fdinfo->is_ipv4_socket()); /* in `parse_connect_enter` we set `SCAP_FD_IPV4_SOCK` as
 	                                          type */
@@ -328,7 +326,6 @@ TEST_F(sinsp_with_test_input, net_bind_listen_accept_ipv4) {
 	add_default_init_thread();
 	open_inspector();
 	sinsp_evt* evt = NULL;
-	sinsp_fdinfo* fdinfo = NULL;
 	char ipv4_string[DEFAULT_IP_STRING_SIZE];
 
 	generate_socket_events();
@@ -346,7 +343,7 @@ TEST_F(sinsp_with_test_input, net_bind_listen_accept_ipv4) {
 	        (int64_t)0,
 	        scap_const_sized_buffer{server_sockaddr.data(), server_sockaddr.size()},
 	        sinsp_test_input::socket_params::default_fd);
-	fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_FALSE(fdinfo->is_ipv4_socket());
 	ASSERT_FALSE(fdinfo->is_role_none());
@@ -490,7 +487,6 @@ TEST_F(sinsp_with_test_input, net_connect_exit_event_fails) {
 	add_default_init_thread();
 	open_inspector();
 	sinsp_evt* evt = NULL;
-	sinsp_fdinfo* fdinfo = NULL;
 	char ipv4_string[DEFAULT_IP_STRING_SIZE];
 
 	generate_socket_events();
@@ -526,7 +522,7 @@ TEST_F(sinsp_with_test_input, net_connect_exit_event_fails) {
 	        sinsp_test_input::socket_params::default_fd,
 	        scap_const_sized_buffer{server_sockaddr.data(), server_sockaddr.size()});
 
-	fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->m_name.c_str(), DEFAULT_IPV4_FDNAME);
 	ASSERT_EQ(get_field_as_string(evt, "fd.name"), DEFAULT_IPV4_FDNAME);
@@ -599,7 +595,6 @@ TEST_F(sinsp_with_test_input, net_connect_enter_event_is_empty) {
 	add_default_init_thread();
 	open_inspector();
 	sinsp_evt* evt = NULL;
-	sinsp_fdinfo* fdinfo = NULL;
 	char ipv4_string[DEFAULT_IP_STRING_SIZE];
 
 	generate_socket_events(sinsp_test_input::socket_params(PPM_AF_INET, SOCK_DGRAM));
@@ -681,7 +676,7 @@ TEST_F(sinsp_with_test_input, net_connect_enter_event_is_empty) {
 
 	/* The parser is not able to obtain an updated fdname because the syscall fails and the parser
 	 * flow is truncated */
-	fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->m_name.c_str(), DEFAULT_IPV4_FDNAME);
 
@@ -699,7 +694,6 @@ TEST_F(sinsp_with_test_input, net_connect_enter_event_is_missing) {
 	add_default_init_thread();
 	open_inspector();
 	sinsp_evt* evt = NULL;
-	sinsp_fdinfo* fdinfo = NULL;
 	char ipv4_string[DEFAULT_IP_STRING_SIZE];
 
 	generate_socket_events(sinsp_test_input::socket_params(PPM_AF_INET, SOCK_DGRAM));
@@ -745,7 +739,7 @@ TEST_F(sinsp_with_test_input, net_connect_enter_event_is_missing) {
 	ASSERT_EQ(get_field_as_string(evt, "fd.rport"), port_client_string);
 	ASSERT_EQ(get_field_as_string(evt, "fd.lport"), port_server_string);
 
-	fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->m_name.c_str(), fdname.c_str());
 

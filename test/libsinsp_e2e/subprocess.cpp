@@ -34,10 +34,10 @@ subprocess::subprocess(std::string command,
                        std::vector<std::string> arguments,
                        bool start_now,
                        int retry_attempts):
-        m_pid(-1),
-        m_retry_attemps(retry_attempts),
         m_command(command),
-        m_args(arguments) {
+        m_args(arguments),
+        m_pid(-1),
+        m_retry_attemps(retry_attempts) {
 	if(start_now) {
 		start();
 	}

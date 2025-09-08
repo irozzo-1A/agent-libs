@@ -262,31 +262,26 @@ TEST_F(sinsp_with_test_input, CLONE_CALLER_check_event_tinfo) {
 	/* New main thread, caller already present */
 	auto evt = generate_clone_x_event(11, 1, 1, 0);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 1);
 
 	/* New main thread, caller not already present */
 	evt = generate_clone_x_event(13, 24, 24, 26);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 24);
 
 	/* New thread */
 	evt = generate_clone_x_event(14, 33, 32, 30, PPM_CL_CLONE_THREAD);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 33);
 
 	/* New main thread container init */
 	evt = generate_clone_x_event(15, 37, 37, 36, PPM_CL_CLONE_NEWNS);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 37);
 
 	/* Caller in container */
 	evt = generate_clone_x_event(2, 38, 38, 37, PPM_CL_CHILD_IN_PIDNS);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 38);
 }
 
@@ -516,8 +511,7 @@ TEST_F(sinsp_with_test_input, CLONE_CHILD_new_main_thread) {
 	ASSERT_THREAD_CHILDREN(INIT_TID, 1, 1, p1_t1_tid)
 
 	/* Check if the thread-info in the thread table is correctly assigned to our event */
-	sinsp_threadinfo* p1_t1_tinfo =
-	        m_inspector.m_thread_manager->get_thread_ref(p1_t1_tid, false, true).get();
+	auto p1_t1_tinfo = m_inspector.m_thread_manager->get_thread_ref(p1_t1_tid, false, true);
 	ASSERT_TRUE(evt && evt->get_thread_info());
 	ASSERT_TRUE(p1_t1_tinfo);
 	ASSERT_EQ(p1_t1_tinfo, evt->get_thread_info());
@@ -593,31 +587,26 @@ TEST_F(sinsp_with_test_input, CLONE_CHILD_check_event_tinfo) {
 	/* New main thread, caller already present */
 	auto evt = generate_clone_x_event(0, 11, 11, 1);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 11);
 
 	/* New main thread, caller not already present */
 	evt = generate_clone_x_event(0, 24, 24, 26);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 24);
 
 	/* New thread */
 	evt = generate_clone_x_event(0, 33, 32, 30, PPM_CL_CLONE_THREAD);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 33);
 
 	/* New main thread container init */
 	evt = generate_clone_x_event(0, 37, 37, 36, PPM_CL_CLONE_NEWNS | PPM_CL_CHILD_IN_PIDNS);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 37);
 
 	/* container */
 	evt = generate_clone_x_event(0, 38, 38, 37, PPM_CL_CHILD_IN_PIDNS);
 	ASSERT_TRUE(evt->get_tinfo());
-	ASSERT_FALSE(evt->get_tinfo_ref());
 	ASSERT_EQ(evt->get_tinfo()->m_tid, 38);
 }
 

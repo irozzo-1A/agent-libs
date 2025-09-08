@@ -176,21 +176,21 @@ TEST_F(sys_call_test, forking_while_scap_stopped) {
 		// In both cases, the process should exist
 		//
 		if(e->get_tid() == ptid && !parent_exists) {
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 			if(ti) {
 				parent_exists = true;
 			}
 
-			EXPECT_NE((sinsp_threadinfo*)NULL, ti);
+			EXPECT_NE(nullptr, ti);
 		}
 
 		if(e->get_tid() == ctid && !child_exists) {
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 			if(ti) {
 				child_exists = true;
 			}
 
-			EXPECT_NE((sinsp_threadinfo*)NULL, ti);
+			EXPECT_NE(nullptr, ti);
 		}
 	};
 
@@ -233,7 +233,7 @@ TEST_F(sys_call_test, forking_process_expired) {
 				//
 				// Wait 10 seconds. During this time, the process should NOT be removed
 				//
-				struct timespec req {};
+				struct timespec req{};
 				req.tv_sec = 1;
 				req.tv_nsec = 0;
 
@@ -259,14 +259,14 @@ TEST_F(sys_call_test, forking_process_expired) {
 				//
 				// The child should exist
 				//
-				sinsp_threadinfo* ti = thread_manager->get_thread_ref(ctid, false, true).get();
-				EXPECT_NE((sinsp_threadinfo*)NULL, ti);
+				auto ti = thread_manager->get_thread_ref(ctid, false, true).get();
+				EXPECT_NE(nullptr, ti);
 			} else if(e->get_type() == PPME_SYSCALL_NANOSLEEP_X) {
 				//
 				// The child should exist
 				//
-				sinsp_threadinfo* ti = thread_manager->get_thread_ref(ctid, false, true).get();
-				EXPECT_NE((sinsp_threadinfo*)NULL, ti);
+				auto ti = thread_manager->get_thread_ref(ctid, false, true).get();
+				EXPECT_NE(nullptr, ti);
 				sleep_caught = true;
 			}
 		}
@@ -400,7 +400,7 @@ TEST_F(sys_call_test, DISABLED_forking_clone_fs) {
 		sinsp_evt* e = param.m_evt;
 		if(e->get_type() == PPME_SYSCALL_CLONE_20_X && callnum == 0) {
 			uint64_t res = std::stoll(e->get_param_value_str("res", false));
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 
 			if(ti->get_comm() != "libsinsp_e2e_te") {
 				return;
@@ -421,7 +421,7 @@ TEST_F(sys_call_test, DISABLED_forking_clone_fs) {
 				callnum++;
 			}
 		} else if(e->get_type() == PPME_SYSCALL_CLOSE_E) {
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 
 			if(ti->m_tid == ptid || ti->m_tid == child_tid) {
 				int64_t clfd = std::stoll(e->get_param_value_str("fd", false));
@@ -431,7 +431,7 @@ TEST_F(sys_call_test, DISABLED_forking_clone_fs) {
 				}
 			}
 		} else if(e->get_type() == PPME_SYSCALL_CLOSE_X) {
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 
 			if(callnum < 3) {
 				return;
@@ -440,7 +440,7 @@ TEST_F(sys_call_test, DISABLED_forking_clone_fs) {
 			int64_t res = std::stoll(e->get_param_value_str("res", false));
 
 			if(ti->m_tid == ptid) {
-				sinsp_fdinfo* fdi = ti->get_fd(prfd);
+				auto fdi = ti->get_fd(prfd);
 				if(fdi && fdi->tostring_clean().find(FILENAME) != std::string::npos) {
 					EXPECT_EQ(parent_res, res) << "filename: " << fdi->tostring_clean() << std::endl
 					                           << "res: " << res << std::endl
@@ -533,7 +533,7 @@ TEST_F(sys_call_test, forking_clone_nofs) {
 		sinsp_evt* e = param.m_evt;
 		if(e->get_type() == PPME_SYSCALL_CLONE_20_X && callnum == 0) {
 			uint64_t res = std::stoull(e->get_param_value_str("res", false));
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 
 			if(ti->get_comm() != "libsinsp_e2e_te") {
 				return;
@@ -554,7 +554,7 @@ TEST_F(sys_call_test, forking_clone_nofs) {
 				callnum++;
 			}
 		} else if(e->get_type() == PPME_SYSCALL_CLOSE_E) {
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 
 			if(ti->m_tid == ptid || ti->m_tid == ctid) {
 				int64_t clfd = std::stoll(e->get_param_value_str("fd", false));
@@ -564,7 +564,7 @@ TEST_F(sys_call_test, forking_clone_nofs) {
 				}
 			}
 		} else if(e->get_type() == PPME_SYSCALL_CLOSE_X) {
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 
 			if(callnum < 3) {
 				return;
@@ -664,7 +664,7 @@ TEST_F(sys_call_test, forking_clone_cwd) {
 		sinsp_evt* e = param.m_evt;
 		if(e->get_type() == PPME_SYSCALL_CLONE_20_X) {
 			uint64_t res = std::stoull(e->get_param_value_str("res", false));
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 			if(ti->get_comm() != "libsinsp_e2e_te") {
 				return;
 			}
@@ -680,7 +680,7 @@ TEST_F(sys_call_test, forking_clone_cwd) {
 			EXPECT_EQ(drflags, std::stol(e->get_param_value_str("flags", false)));
 			callnum++;
 		} else if(e->get_type() == PPME_SYSCALL_GETCWD_E) {
-			sinsp_threadinfo* ti = e->get_thread_info(false);
+			auto ti = e->get_thread_info(false);
 
 			if(ti->m_tid == ptid) {
 				if(callnum > 1) {
@@ -721,7 +721,7 @@ TEST_F(sys_call_test, forking_main_thread_exit) {
 	pid_t cpid;  // parent tid
 
 	event_filter_t filter = [&](sinsp_evt* evt) {
-		sinsp_threadinfo* ti = evt->get_thread_info();
+		auto ti = evt->get_thread_info();
 		if(ti) {
 			return ti->m_pid == cpid;
 		} else {
@@ -923,7 +923,7 @@ TEST_F(sys_call_test, remove_stale_thread_clone_exit) {
 	// effectively captures the actions of the second thread that
 	// uses the recycled pid.
 	event_filter_t filter = [&](sinsp_evt* evt) {
-		sinsp_threadinfo* tinfo = evt->get_thread_info();
+		auto tinfo = evt->get_thread_info();
 		return (tinfo && tinfo->m_tid == recycle_pid);
 	};
 
@@ -1012,7 +1012,7 @@ TEST_F(sys_call_test, remove_stale_thread_clone_exit) {
 	captured_event_callback_t callback = [&](const callback_param& param) {
 		sinsp_evt* e = param.m_evt;
 		uint16_t etype = e->get_type();
-		sinsp_threadinfo* tinfo = e->get_thread_info();
+		auto tinfo = e->get_thread_info();
 		ASSERT_TRUE((tinfo != NULL));
 
 		if((etype == PPME_SYSCALL_CLONE_20_X) && e->get_direction() == SCAP_ED_OUT) {

@@ -287,7 +287,7 @@ public:
 					            sizeof(serveraddr));
 				}
 			} else {
-				struct msghdr msg {};
+				struct msghdr msg{};
 				if(m_use_connect) {
 					msg.msg_name = NULL;
 				} else {
@@ -516,7 +516,7 @@ TEST_F(sys_call_test, udp_client_server) {
 				EXPECT_TRUE(udps.is_server_port(dst_port));
 
 				EXPECT_EQ(PAYLOAD, e->get_param_value_str("data"));
-				sinsp_fdinfo* fdinfo = e->get_thread_info(false)->get_fd(fd_server_socket);
+				auto fdinfo = e->get_thread_info(false)->get_fd(fd_server_socket);
 				ASSERT_TRUE(fdinfo);
 				EXPECT_EQ(udps.server_ip_address(), fdinfo->m_sockinfo.m_ipv4info.m_fields.m_sip);
 
@@ -559,7 +559,7 @@ TEST_F(sys_call_test, udp_client_server) {
 				EXPECT_NE("0", dst_port);
 
 				EXPECT_EQ(PAYLOAD, e->get_param_value_str("data"));
-				sinsp_fdinfo* fdinfo = e->get_thread_info(false)->get_fd(fd_server_socket);
+				auto fdinfo = e->get_thread_info(false)->get_fd(fd_server_socket);
 				ASSERT_TRUE(fdinfo);
 				EXPECT_EQ(udps.server_ip_address(), fdinfo->m_sockinfo.m_ipv4info.m_fields.m_sip);
 

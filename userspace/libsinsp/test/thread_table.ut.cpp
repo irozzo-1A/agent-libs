@@ -78,8 +78,7 @@ TEST_F(sinsp_with_test_input, THRD_TABLE_check_init_process_creation) {
 	/* Right now we have only the init process here */
 	add_default_init_thread();
 	open_inspector();
-	sinsp_threadinfo* tinfo =
-	        m_inspector.m_thread_manager->get_thread_ref(INIT_TID, false, true).get();
+	auto tinfo = m_inspector.m_thread_manager->get_thread_ref(INIT_TID, false, true);
 	ASSERT_TRUE(tinfo);
 	ASSERT_TRUE(tinfo->is_main_thread());
 	ASSERT_EQ(m_inspector.m_thread_manager->get_main_thread(tinfo->m_tid), tinfo);
@@ -92,7 +91,7 @@ TEST_F(sinsp_with_test_input, THRD_TABLE_check_init_process_creation) {
 	ASSERT_TRUE(tinfo->m_tginfo);
 	ASSERT_EQ(tinfo->m_tginfo->get_thread_count(), 1);
 	ASSERT_EQ(tinfo->m_tginfo->is_reaper(), true);
-	ASSERT_EQ(tinfo->m_tginfo->get_thread_list().front().lock().get(), tinfo);
+	ASSERT_EQ(tinfo->m_tginfo->get_thread_list().front().lock(), tinfo);
 }
 
 TEST_F(sinsp_with_test_input, THRD_TABLE_create_thread_dependencies_after_proc_scan) {

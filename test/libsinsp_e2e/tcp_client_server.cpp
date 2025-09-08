@@ -142,7 +142,7 @@ void runtest(iotype iot,
 		if(evt->get_type() == PPME_SOCKET_CONNECT_X) {
 			std::string tuple = evt->get_param_value_str("tuple");
 
-			EXPECT_NE((sinsp_fdinfo*)NULL, evt->get_fd_info());
+			EXPECT_NE(nullptr, evt->get_fd_info());
 
 			if(evt->get_fd_info()->m_type != SCAP_FD_IPV4_SOCK) {
 				//

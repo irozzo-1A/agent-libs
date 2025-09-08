@@ -793,7 +793,7 @@ TEST_F(sys_call_test, procinfo_processchild_cpuload) {
 		uint16_t type = e->get_type();
 
 		if(type == PPME_PROCINFO_E) {
-			sinsp_threadinfo* tinfo = e->get_thread_info();
+			auto tinfo = e->get_thread_info();
 
 			if(tinfo) {
 				if(tinfo->m_tid == ctid) {
@@ -862,7 +862,7 @@ TEST_F(sys_call_test, procinfo_two_processchilds_cpuload) {
 		uint16_t type = e->get_type();
 
 		if(type == PPME_PROCINFO_E) {
-			sinsp_threadinfo* tinfo = e->get_thread_info();
+			auto tinfo = e->get_thread_info();
 
 			if(tinfo) {
 				if(tinfo->m_tid == ctid) {

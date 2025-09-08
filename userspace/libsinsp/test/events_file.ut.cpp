@@ -415,7 +415,7 @@ TEST_F(sinsp_with_test_input, umount) {
 	ASSERT_EQ(get_field_as_string(evt, "evt.arg.res"), std::to_string(res));
 	ASSERT_EQ(get_field_as_string(evt, "evt.arg.name"), name);
 
-	sinsp_fdinfo* fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_EQ(fdinfo, nullptr);
 }
 
@@ -435,7 +435,7 @@ TEST_F(sinsp_with_test_input, umount2) {
 	ASSERT_EQ(get_field_as_string(evt, "evt.arg.res"), std::to_string(res));
 	ASSERT_EQ(get_field_as_string(evt, "evt.arg.name"), name);
 
-	sinsp_fdinfo* fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_EQ(fdinfo, nullptr);
 }
 
@@ -467,7 +467,7 @@ TEST_F(sinsp_with_test_input, pipe) {
 	ASSERT_FD_FILTER_CHECK_NOT_FILE()
 
 	/* Here we check the `openflags` field of the fdinfo2, it should be 0 since pipe has no flags */
-	sinsp_fdinfo* fdinfo2 = evt->get_fd_info();
+	auto fdinfo2 = evt->get_fd_info();
 	ASSERT_NE(fdinfo2, nullptr);
 	ASSERT_EQ(fdinfo2->m_openflags, 0);
 	ASSERT_FD_GETTERS_NOT_FILE(fdinfo2)
@@ -476,7 +476,7 @@ TEST_F(sinsp_with_test_input, pipe) {
 	 * `fdinfo` pointer. */
 
 	ASSERT_NE(evt->get_thread_info(), nullptr);
-	sinsp_fdinfo* fdinfo1 = evt->get_thread_info()->get_fd(fd1);
+	auto fdinfo1 = evt->get_thread_info()->get_fd(fd1);
 	ASSERT_NE(fdinfo1, nullptr);
 	ASSERT_STREQ(fdinfo1->get_typestring(), "pipe");
 	ASSERT_EQ(fdinfo1->get_typechar(), 'p');
@@ -524,7 +524,7 @@ TEST_F(sinsp_with_test_input, pipe2) {
 
 	/* Here we check the `openflags` field of the fdinfo2, it should be 17 since pipe2 has flags
 	 * field */
-	sinsp_fdinfo* fdinfo2 = evt->get_fd_info();
+	auto fdinfo2 = evt->get_fd_info();
 	ASSERT_NE(fdinfo2, nullptr);
 	ASSERT_EQ(fdinfo2->m_openflags, flags);
 	ASSERT_FD_GETTERS_NOT_FILE(fdinfo2)
@@ -532,7 +532,7 @@ TEST_F(sinsp_with_test_input, pipe2) {
 	/* Now we get the first file descriptor (`3`) and we assert some fields directly through the
 	 * `fdinfo` pointer. */
 	ASSERT_NE(evt->get_thread_info(), nullptr);
-	sinsp_fdinfo* fdinfo1 = evt->get_thread_info()->get_fd(fd1);
+	auto fdinfo1 = evt->get_thread_info()->get_fd(fd1);
 	ASSERT_NE(fdinfo1, nullptr);
 	ASSERT_STREQ(fdinfo1->get_typestring(), "pipe");
 	ASSERT_EQ(fdinfo1->get_typechar(), 'p');
@@ -560,7 +560,7 @@ TEST_F(sinsp_with_test_input, inotify_init) {
 	ASSERT_FD_FILTER_CHECK_NOT_FILE()
 
 	/* Here we check fields of the fdinfo directly with getter methods */
-	sinsp_fdinfo* fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->get_typestring(), "inotify");
 	ASSERT_EQ(fdinfo->get_typechar(), 'i');
@@ -588,7 +588,7 @@ TEST_F(sinsp_with_test_input, inotify_init1) {
 	ASSERT_FD_FILTER_CHECK_NOT_FILE()
 
 	/* Here we check fields of the fdinfo directly with getter methods */
-	sinsp_fdinfo* fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->get_typestring(), "inotify");
 	ASSERT_EQ(fdinfo->get_typechar(), 'i');
@@ -616,7 +616,7 @@ TEST_F(sinsp_with_test_input, eventfd) {
 	ASSERT_FD_FILTER_CHECK_NOT_FILE()
 
 	/* Here we check fields of the fdinfo directly with getter methods */
-	sinsp_fdinfo* fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->get_typestring(), "event");
 	ASSERT_EQ(fdinfo->get_typechar(), 'e');
@@ -645,7 +645,7 @@ TEST_F(sinsp_with_test_input, eventfd2) {
 	ASSERT_FD_FILTER_CHECK_NOT_FILE()
 
 	/* Here we check fields of the fdinfo directly with getter methods */
-	sinsp_fdinfo* fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->get_typestring(), "event");
 	ASSERT_EQ(fdinfo->get_typechar(), 'e');
@@ -681,7 +681,7 @@ TEST_F(sinsp_with_test_input, signalfd) {
 	ASSERT_FD_FILTER_CHECK_NOT_FILE()
 
 	/* Here we check fields of the fdinfo directly with getter methods */
-	sinsp_fdinfo* fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->get_typestring(), "signalfd");
 	ASSERT_EQ(fdinfo->get_typechar(), 's');
@@ -717,7 +717,7 @@ TEST_F(sinsp_with_test_input, signalfd4) {
 	ASSERT_FD_FILTER_CHECK_NOT_FILE()
 
 	/* Here we check fields of the fdinfo directly with getter methods */
-	sinsp_fdinfo* fdinfo = evt->get_fd_info();
+	auto fdinfo = evt->get_fd_info();
 	ASSERT_NE(fdinfo, nullptr);
 	ASSERT_STREQ(fdinfo->get_typestring(), "signalfd");
 	ASSERT_EQ(fdinfo->get_typechar(), 's');

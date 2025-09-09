@@ -149,7 +149,7 @@ void sinsp_thread_manager::clear() {
 	std::unique_lock<std::shared_mutex> groups_lock(m_thread_groups_mutex);
 
 	// Step 2: Lock thread table (M1) - standard lock order
-	std::unique_lock<std::shared_mutex> threadtable_lock(m_threadtable_mutex);
+	// std::unique_lock<std::shared_mutex> threadtable_lock(m_threadtable_mutex);
 
 	// Step 3: Lock cache
 	// std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
@@ -161,7 +161,7 @@ void sinsp_thread_manager::clear() {
 	// std::unique_lock<std::mutex> flush_lock(m_flush_mutex);
 
 	// Now perform the clear operations
-	m_threadtable.clear();
+	clear_entries();
 	m_thread_groups.clear();
 	// m_last_tid = -1;
 	// m_last_tinfo.reset();
@@ -267,7 +267,7 @@ std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::add_thread(
 	{
 		// Lock ordering: CONFIG (CONFIG is not in our main order, but this is read-only)
 		std::unique_lock<std::mutex> config_lock(m_config_mutex);
-		if(m_threadtable.size() >= m_max_thread_table_size && threadinfo->m_pid != m_sinsp_pid) {
+		if(get_thread_count() >= m_max_thread_table_size && threadinfo->m_pid != m_sinsp_pid) {
 			if(m_sinsp_stats_v2 != nullptr) {
 				// rate limit messages to avoid spamming the logs
 				if(m_sinsp_stats_v2->m_n_drops_full_threadtable % m_max_thread_table_size == 0) {
@@ -319,9 +319,10 @@ std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::add_thread(
 	tinfo_shared_ptr->update_main_fdtable();
 
 	// Lock ordering: THREADTABLE (final operation)
+	int shard = tinfo_shared_ptr->m_tid % NUM_THREAD_TABLE_SHARDS;
 	{
-		std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
-		return m_threadtable.put(tinfo_shared_ptr);
+		std::unique_lock<std::shared_mutex> lock(m_threadtable_mutexes[shard]);
+		return m_threadtables[shard].put(tinfo_shared_ptr);
 	}
 }
 
@@ -442,10 +443,11 @@ void sinsp_thread_manager::remove_main_thread_fdtable(
 void sinsp_thread_manager::remove_thread(int64_t tid) {
 	std::shared_ptr<sinsp_threadinfo> thread_to_remove;
 
+	int shard = tid % NUM_THREAD_TABLE_SHARDS;
 	// Step 1: Lock thread table for read (highest priority)
 	{
-		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
-		thread_to_remove = m_threadtable.get(tid);
+		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutexes[shard]);
+		thread_to_remove = m_threadtables[shard].get(tid);
 	}
 
 	/* This should never happen but just to be sure. */
@@ -468,8 +470,8 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 
 		// Lock ordering: THREADTABLE -> CACHE (consistent with clear())
 		{
-			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
-			m_threadtable.erase(tid);
+			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutexes[shard]);
+			m_threadtables[shard].erase(tid);
 		}
 		// {
 		// 	std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
@@ -566,10 +568,11 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 		// Use thread manager method to eliminate cross-class deadlock risk
 		remove_child_from_parent(tid);
 
+		int pid_shard = thread_to_remove->m_pid % NUM_THREAD_TABLE_SHARDS;
 		// Lock ordering: THREADTABLE -> THREAD_GROUPS (consistent with clear() order)
 		{
-			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
-			m_threadtable.erase(thread_to_remove->m_pid);
+			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutexes[pid_shard]);
+			m_threadtables[pid_shard].erase(thread_to_remove->m_pid);
 		}
 		{
 			std::unique_lock<std::shared_mutex> groups_lock(m_thread_groups_mutex);
@@ -586,8 +589,8 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 		// Use thread manager method to eliminate cross-class deadlock risk
 		remove_child_from_parent(tid);
 		{
-			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
-			m_threadtable.erase(tid);
+			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutexes[shard]);
+			m_threadtables[shard].erase(tid);
 		}
 	}
 
@@ -609,10 +612,12 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 }
 
 void sinsp_thread_manager::fix_sockets_coming_from_proc(const bool resolve_hostname_and_port) {
-	m_threadtable.loop([&](sinsp_threadinfo& tinfo) {
-		tinfo.fix_sockets_coming_from_proc(m_server_ports, resolve_hostname_and_port);
-		return true;
-	});
+	for(int i = 0; i < NUM_THREAD_TABLE_SHARDS; i++) {
+		m_threadtables[i].loop([&](sinsp_threadinfo& tinfo) {
+			tinfo.fix_sockets_coming_from_proc(m_server_ports, resolve_hostname_and_port);
+			return true;
+		});
+	}
 }
 
 void sinsp_thread_manager::clear_thread_pointers(sinsp_threadinfo& tinfo) {
@@ -623,18 +628,20 @@ void sinsp_thread_manager::clear_thread_pointers(sinsp_threadinfo& tinfo) {
 }
 
 void sinsp_thread_manager::reset_child_dependencies() {
-	m_threadtable.loop([&](sinsp_threadinfo& tinfo) {
-		tinfo.clean_expired_children();
-		/* Little optimization: only the main thread cleans the thread group from expired threads.
-		 * Downside: if the main thread is not present in the thread group because we lost it we
-		 * don't clean the thread group from expired threads.
-		 */
-		if(tinfo.is_main_thread() && tinfo.m_tginfo != nullptr) {
-			tinfo.m_tginfo->clean_expired_threads();
-		}
-		clear_thread_pointers(tinfo);
-		return true;
-	});
+	for(int i = 0; i < NUM_THREAD_TABLE_SHARDS; i++) {
+		m_threadtables[i].loop([&](sinsp_threadinfo& tinfo) {
+			tinfo.clean_expired_children();
+			/* Little optimization: only the main thread cleans the thread group from expired
+			 * threads. Downside: if the main thread is not present in the thread group because we
+			 * lost it we don't clean the thread group from expired threads.
+			 */
+			if(tinfo.is_main_thread() && tinfo.m_tginfo != nullptr) {
+				tinfo.m_tginfo->clean_expired_threads();
+			}
+			clear_thread_pointers(tinfo);
+			return true;
+		});
+	}
 }
 
 void sinsp_thread_manager::create_thread_dependencies_after_proc_scan() {
@@ -646,10 +653,13 @@ void sinsp_thread_manager::create_thread_dependencies_after_proc_scan() {
 	std::vector<std::shared_ptr<sinsp_threadinfo>> threads_to_process;
 
 	// Acquire thread table lock (M1) and collect thread data
-	m_threadtable.const_loop_shared_pointer([&](const std::shared_ptr<sinsp_threadinfo>& tinfo) {
-		threads_to_process.push_back(tinfo);
-		return true;
-	});
+	for(int i = 0; i < NUM_THREAD_TABLE_SHARDS; i++) {
+		m_threadtables[i].const_loop_shared_pointer(
+		        [&](const std::shared_ptr<sinsp_threadinfo>& tinfo) {
+			        threads_to_process.push_back(tinfo);
+			        return true;
+		        });
+	}
 
 	// Now process each thread, acquiring thread groups lock (M0) as needed
 	for(const auto& tinfo : threads_to_process) {
@@ -771,7 +781,7 @@ void sinsp_thread_manager::maybe_log_max_lookup(int64_t tid, bool scan_sockets, 
 }
 
 void sinsp_thread_manager::dump_threads_to_file(scap_dumper_t* dumper) {
-	if(m_threadtable.size() == 0) {
+	if(get_thread_count() == 0) {
 		return;
 	}
 
@@ -781,52 +791,55 @@ void sinsp_thread_manager::dump_threads_to_file(scap_dumper_t* dumper) {
 	}
 
 	uint32_t totlen = 0;
-	m_threadtable.loop([&](sinsp_threadinfo& tinfo) {
-		if(tinfo.m_filtered_out) {
+	for(int i = 0; i < NUM_THREAD_TABLE_SHARDS; i++) {
+		m_threadtables[i].loop([&](sinsp_threadinfo& tinfo) {
+			if(tinfo.m_filtered_out) {
+				return true;
+			}
+
+			scap_threadinfo sctinfo{};
+			struct iovec *args_iov, *envs_iov, *cgroups_iov;
+			int argscnt, envscnt, cgroupscnt;
+			std::string argsrem, envsrem, cgroupsrem;
+			uint32_t entrylen = 0;
+			const auto& cg = tinfo.cgroups();
+
+			memset(&sctinfo, 0, sizeof(scap_threadinfo));
+
+			thread_to_scap(tinfo, &sctinfo);
+			tinfo.args_to_iovec(&args_iov, &argscnt, argsrem);
+			tinfo.env_to_iovec(&envs_iov, &envscnt, envsrem);
+			tinfo.cgroups_to_iovec(&cgroups_iov, &cgroupscnt, cgroupsrem, cg);
+
+			if(scap_write_proclist_entry_bufs(
+			           proclist_dumper,
+			           &sctinfo,
+			           &entrylen,
+			           tinfo.m_comm.c_str(),
+			           tinfo.m_exe.c_str(),
+			           tinfo.m_exepath.c_str(),
+			           args_iov,
+			           argscnt,
+			           envs_iov,
+			           envscnt,
+			           (tinfo.get_cwd() == "" ? "/" : tinfo.get_cwd().c_str()),
+			           cgroups_iov,
+			           cgroupscnt,
+			           tinfo.m_root.c_str()) != SCAP_SUCCESS) {
+				sinsp_exception exc(scap_dump_getlasterr(proclist_dumper));
+				scap_dump_close(proclist_dumper);
+				throw exc;
+			}
+
+			totlen += entrylen;
+
+			free(args_iov);
+			free(envs_iov);
+			free(cgroups_iov);
+
 			return true;
-		}
-
-		scap_threadinfo sctinfo{};
-		struct iovec *args_iov, *envs_iov, *cgroups_iov;
-		int argscnt, envscnt, cgroupscnt;
-		std::string argsrem, envsrem, cgroupsrem;
-		uint32_t entrylen = 0;
-		const auto& cg = tinfo.cgroups();
-
-		memset(&sctinfo, 0, sizeof(scap_threadinfo));
-
-		thread_to_scap(tinfo, &sctinfo);
-		tinfo.args_to_iovec(&args_iov, &argscnt, argsrem);
-		tinfo.env_to_iovec(&envs_iov, &envscnt, envsrem);
-		tinfo.cgroups_to_iovec(&cgroups_iov, &cgroupscnt, cgroupsrem, cg);
-
-		if(scap_write_proclist_entry_bufs(proclist_dumper,
-		                                  &sctinfo,
-		                                  &entrylen,
-		                                  tinfo.m_comm.c_str(),
-		                                  tinfo.m_exe.c_str(),
-		                                  tinfo.m_exepath.c_str(),
-		                                  args_iov,
-		                                  argscnt,
-		                                  envs_iov,
-		                                  envscnt,
-		                                  (tinfo.get_cwd() == "" ? "/" : tinfo.get_cwd().c_str()),
-		                                  cgroups_iov,
-		                                  cgroupscnt,
-		                                  tinfo.m_root.c_str()) != SCAP_SUCCESS) {
-			sinsp_exception exc(scap_dump_getlasterr(proclist_dumper));
-			scap_dump_close(proclist_dumper);
-			throw exc;
-		}
-
-		totlen += entrylen;
-
-		free(args_iov);
-		free(envs_iov);
-		free(cgroups_iov);
-
-		return true;
-	});
+		});
+	}
 
 	if(scap_write_proclist_end(dumper, proclist_dumper, totlen) != SCAP_SUCCESS) {
 		throw sinsp_exception(scap_dump_getlasterr(dumper));
@@ -836,75 +849,77 @@ void sinsp_thread_manager::dump_threads_to_file(scap_dumper_t* dumper) {
 	// Dump the FDs
 	//
 
-	m_threadtable.loop([&](sinsp_threadinfo& tinfo) {
-		if(tinfo.m_filtered_out) {
-			return true;
-		}
-
-		scap_threadinfo sctinfo{};
-
-		memset(&sctinfo, 0, sizeof(scap_threadinfo));
-
-		// Note: as scap_fd_add/scap_write_proc_fds do not use
-		// any of the array-based fields like comm, etc. a
-		// shallow copy is safe
-		thread_to_scap(tinfo, &sctinfo);
-
-		if(tinfo.is_main_thread()) {
-			//
-			// Add the FDs
-			//
-			auto fd_table_ptr = tinfo.get_fd_table();
-			if(!fd_table_ptr) {
-				return false;
+	for(int i = 0; i < NUM_THREAD_TABLE_SHARDS; i++) {
+		m_threadtables[i].loop([&](sinsp_threadinfo& tinfo) {
+			if(tinfo.m_filtered_out) {
+				return true;
 			}
 
-			bool should_exit = false;
-			fd_table_ptr->loop([&](int64_t fd, sinsp_fdinfo& info) {
+			scap_threadinfo sctinfo{};
+
+			memset(&sctinfo, 0, sizeof(scap_threadinfo));
+
+			// Note: as scap_fd_add/scap_write_proc_fds do not use
+			// any of the array-based fields like comm, etc. a
+			// shallow copy is safe
+			thread_to_scap(tinfo, &sctinfo);
+
+			if(tinfo.is_main_thread()) {
 				//
-				// Allocate the scap fd info
+				// Add the FDs
 				//
-				scap_fdinfo* scfdinfo = (scap_fdinfo*)malloc(sizeof(scap_fdinfo));
-				if(scfdinfo == NULL) {
-					scap_fd_free_proc_fd_table(&sctinfo);
-					should_exit = true;
+				auto fd_table_ptr = tinfo.get_fd_table();
+				if(!fd_table_ptr) {
 					return false;
 				}
 
-				//
-				// Populate the fd info
-				//
-				fd_to_scap(*scfdinfo, info);
+				bool should_exit = false;
+				fd_table_ptr->loop([&](int64_t fd, sinsp_fdinfo& info) {
+					//
+					// Allocate the scap fd info
+					//
+					scap_fdinfo* scfdinfo = (scap_fdinfo*)malloc(sizeof(scap_fdinfo));
+					if(scfdinfo == NULL) {
+						scap_fd_free_proc_fd_table(&sctinfo);
+						should_exit = true;
+						return false;
+					}
 
-				//
-				// Add the new fd to the scap table.
-				//
-				if(scap_fd_add(&sctinfo, scfdinfo) != SCAP_SUCCESS) {
-					scap_fd_free_proc_fd_table(&sctinfo);
-					throw sinsp_exception("Failed to add fd to hash table");
+					//
+					// Populate the fd info
+					//
+					fd_to_scap(*scfdinfo, info);
+
+					//
+					// Add the new fd to the scap table.
+					//
+					if(scap_fd_add(&sctinfo, scfdinfo) != SCAP_SUCCESS) {
+						scap_fd_free_proc_fd_table(&sctinfo);
+						throw sinsp_exception("Failed to add fd to hash table");
+					}
+
+					return true;
+				});
+
+				if(should_exit) {
+					return false;
 				}
-
-				return true;
-			});
-
-			if(should_exit) {
-				return false;
 			}
-		}
 
-		//
-		// Dump the thread to disk
-		//
-		if(scap_write_proc_fds(dumper, &sctinfo) != SCAP_SUCCESS) {
-			throw sinsp_exception(
-			        "error calling scap_write_proc_fds in "
-			        "sinsp_thread_manager::dump_threads_to_file (" +
-			        std::string(scap_dump_getlasterr(dumper)) + ")");
-		}
+			//
+			// Dump the thread to disk
+			//
+			if(scap_write_proc_fds(dumper, &sctinfo) != SCAP_SUCCESS) {
+				throw sinsp_exception(
+				        "error calling scap_write_proc_fds in "
+				        "sinsp_thread_manager::dump_threads_to_file (" +
+				        std::string(scap_dump_getlasterr(dumper)) + ")");
+			}
 
-		scap_fd_free_proc_fd_table(&sctinfo);
-		return true;
-	});
+			scap_fd_free_proc_fd_table(&sctinfo);
+			return true;
+		});
+	}
 }
 
 /* `lookup_only==true` means that we don't fill the `m_last_tinfo` field */
@@ -926,7 +941,8 @@ threadinfo_map_t::ptr_t sinsp_thread_manager::find_thread(int64_t tid, bool look
 	// 	}
 	// }
 
-	threadinfo_map_t::ptr_t thr = m_threadtable.get(tid);
+	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	threadinfo_map_t::ptr_t thr = m_threadtables[shard].get(tid);
 
 	if(thr) {
 		if(m_sinsp_stats_v2 != nullptr) {
@@ -960,7 +976,7 @@ threadinfo_map_t::ptr_t sinsp_thread_manager::get_thread_ref(const int64_t tid,
 		{
 			// Lock ordering: CONFIG (CONFIG is not in main order, but this is read-only)
 			std::unique_lock<std::mutex> config_lock(m_config_mutex);
-			if(m_threadtable.size() >= m_max_thread_table_size && tid != m_sinsp_pid) {
+			if(get_thread_count() >= m_max_thread_table_size && tid != m_sinsp_pid) {
 				return nullptr;
 			}
 		}
@@ -1075,15 +1091,18 @@ std::unique_ptr<libsinsp::state::table_entry> sinsp_thread_manager::new_entry() 
 // Thread hierarchy operations (eliminates cross-class deadlocks)
 
 std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_parent_thread(int64_t tid) {
-	auto thread = m_threadtable.get(tid);
+	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	auto thread = m_threadtables[shard].get(tid);
 	if(!thread) {
 		return nullptr;
 	}
-	return m_threadtable.get(thread->m_ptid);
+	int parent_shard = thread->m_ptid % NUM_THREAD_TABLE_SHARDS;
+	return m_threadtables[parent_shard].get(thread->m_ptid);
 }
 
 std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_main_thread(int64_t tid) {
-	auto thread = m_threadtable.get(tid);
+	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	auto thread = m_threadtables[shard].get(tid);
 	if(!thread) {
 		return nullptr;
 	}
@@ -1104,14 +1123,16 @@ std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_main_thread(int64_t 
 }
 
 void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper_tid) {
-	auto thread = m_threadtable.get(tid);
+	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	auto thread = m_threadtables[shard].get(tid);
 	if(!thread || thread->m_children.size() == 0) {
 		return;
 	}
 
 	std::shared_ptr<sinsp_threadinfo> reaper;
 	if(reaper_tid > 0) {
-		reaper = m_threadtable.get(reaper_tid);
+		int reaper_shard = reaper_tid % NUM_THREAD_TABLE_SHARDS;
+		reaper = m_threadtables[reaper_shard].get(reaper_tid);
 		if(reaper == thread) {
 			throw sinsp_exception(
 			        "the current process is reaper of itself, this should never happen!");
@@ -1136,12 +1157,14 @@ void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper
 }
 
 void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
-	auto thread = m_threadtable.get(tid);
+	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	auto thread = m_threadtables[shard].get(tid);
 	if(!thread) {
 		return;
 	}
 
-	auto parent = m_threadtable.get(thread->m_ptid);
+	int ptid_shard = thread->m_ptid % NUM_THREAD_TABLE_SHARDS;
+	auto parent = m_threadtables[ptid_shard].get(thread->m_ptid);
 	if(parent == nullptr) {
 		return;
 	}

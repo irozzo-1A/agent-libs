@@ -19,6 +19,7 @@ limitations under the License.
 #pragma once
 
 #define DEFAULT_EXPIRED_CHILDREN_THRESHOLD 10
+#define NUM_THREAD_TABLE_SHARDS 16
 
 #include <functional>
 #include <memory>
@@ -149,9 +150,15 @@ public:
 
 	void dump_threads_to_file(scap_dumper_t* dumper);
 
-	uint32_t get_thread_count() { return (uint32_t)m_threadtable.size(); }
+	uint32_t get_thread_count() const {
+		size_t size = 0;
+		for(int i = 0; i < NUM_THREAD_TABLE_SHARDS; i++) {
+			size += m_threadtables[i].size();
+		}
+		return size;
+	}
 
-	threadinfo_map_t* get_threads() { return &m_threadtable; }
+	// threadinfo_map_t* get_threads() { return &m_threadtable; }
 
 	std::set<uint16_t> m_server_ports;
 
@@ -201,17 +208,23 @@ public:
 
 	// ---- libsinsp::state::table implementation ----
 
-	size_t entries_count() const override { return m_threadtable.size(); }
+	size_t entries_count() const override { return get_thread_count(); }
 
 	void clear_entries() override {
-		std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
-		m_threadtable.clear();
+		for(int i = 0; i < NUM_THREAD_TABLE_SHARDS; i++) {
+			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutexes[i]);
+			m_threadtables[i].clear();
+		}
 	}
 
 	std::unique_ptr<libsinsp::state::table_entry> new_entry() const override;
 
 	bool foreach_entry(std::function<bool(libsinsp::state::table_entry& e)> pred) override {
-		return m_threadtable.loop([&pred](sinsp_threadinfo& e) { return pred(e); });
+		bool ret = true;
+		for(int i = 0; i < NUM_THREAD_TABLE_SHARDS; i++) {
+			ret = ret && m_threadtables[i].loop([&pred](sinsp_threadinfo& e) { return pred(e); });
+		}
+		return ret;
 	}
 
 	std::shared_ptr<libsinsp::state::table_entry> get_entry(const int64_t& key) override {
@@ -238,9 +251,10 @@ public:
 		// or should we just erase the table entry?
 		// todo(jasondellaluce): should we make m_tid_to_remove a list, in case
 		// we have more than one thread removed in a given event loop iteration?
+		int shard = key % NUM_THREAD_TABLE_SHARDS;
 		{
-			std::shared_lock<std::shared_mutex> lock(m_threadtable_mutex);
-			if(m_threadtable.get(key)) {
+			std::shared_lock<std::shared_mutex> lock(m_threadtable_mutexes[shard]);
+			if(m_threadtables[shard].get(key)) {
 				lock.unlock();
 				this->remove_thread(key);
 				return true;
@@ -376,7 +390,7 @@ private:
 	/* the key is the pid of the group, and the value is a shared pointer to the thread_group_info
 	 */
 	std::unordered_map<int64_t, std::shared_ptr<thread_group_info>> m_thread_groups;
-	threadinfo_map_t m_threadtable;
+	threadinfo_map_t m_threadtables[NUM_THREAD_TABLE_SHARDS];
 	// int64_t m_last_tid;
 	// std::shared_ptr<sinsp_threadinfo> m_last_tinfo;
 	std::atomic_uint64_t m_last_flush_time_ns;
@@ -399,8 +413,10 @@ private:
 	std::map<std::string, sinsp_table<std::string>> m_foreign_tables;
 
 	// Thread safety mutexes
-	mutable std::shared_mutex m_threadtable_mutex;  // Protects m_threadtable and related operations
-	mutable std::shared_mutex m_thread_groups_mutex;  // Protects m_thread_groups
+	mutable std::shared_mutex
+	        m_threadtable_mutexes[NUM_THREAD_TABLE_SHARDS];  // Protects m_threadtable and related
+	                                                         // operations
+	mutable std::shared_mutex m_thread_groups_mutex;         // Protects m_thread_groups
 	// mutable std::mutex m_cache_mutex;                 // Protects m_last_tid, m_last_tinfo
 	mutable std::mutex m_stats_mutex;   // Protects statistics counters
 	mutable std::mutex m_config_mutex;  // Protects configuration parameters

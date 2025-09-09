@@ -152,19 +152,19 @@ void sinsp_thread_manager::clear() {
 	std::unique_lock<std::shared_mutex> threadtable_lock(m_threadtable_mutex);
 
 	// Step 3: Lock cache
-	std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+	// std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
 
 	// Step 4: Lock stats
 	std::unique_lock<std::mutex> stats_lock(m_stats_mutex);
 
 	// Step 5: Lock flush
-	std::unique_lock<std::mutex> flush_lock(m_flush_mutex);
+	// std::unique_lock<std::mutex> flush_lock(m_flush_mutex);
 
 	// Now perform the clear operations
 	m_threadtable.clear();
 	m_thread_groups.clear();
-	m_last_tid = -1;
-	m_last_tinfo.reset();
+	// m_last_tid = -1;
+	// m_last_tinfo.reset();
 	m_last_flush_time_ns = 0;
 
 	// Locks are automatically released in reverse order when they go out of scope
@@ -308,13 +308,13 @@ std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::add_thread(
 		}
 	}
 
-	{
-		std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
-		if(m_last_tid == tinfo_shared_ptr->m_tid) {
-			m_last_tid = -1;
-			m_last_tinfo.reset();
-		}
-	}
+	// {
+	// 	std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+	// 	if(m_last_tid == tinfo_shared_ptr->m_tid) {
+	// 		m_last_tid = -1;
+	// 		m_last_tinfo.reset();
+	// 	}
+	// }
 
 	tinfo_shared_ptr->update_main_fdtable();
 
@@ -405,7 +405,8 @@ sinsp_threadinfo* sinsp_thread_manager::find_new_reaper(sinsp_threadinfo* tinfo)
 	return nullptr;
 }
 
-void sinsp_thread_manager::remove_main_thread_fdtable(std::shared_ptr<sinsp_threadinfo> main_thread) const {
+void sinsp_thread_manager::remove_main_thread_fdtable(
+        std::shared_ptr<sinsp_threadinfo> main_thread) const {
 	// All this logic is intended to just call the `m_observer->on_erase_fd` callback, so just
 	// returns if there is no observer.
 	if(m_observer == nullptr) {
@@ -470,11 +471,11 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
 			m_threadtable.erase(tid);
 		}
-		{
-			std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
-			m_last_tid = -1;
-			m_last_tinfo.reset();
-		}
+		// {
+		// 	std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+		// 	m_last_tid = -1;
+		// 	m_last_tinfo.reset();
+		// }
 		return;
 	}
 
@@ -594,11 +595,11 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 	 * the cache just to be sure.
 	 */
 	// Lock ordering: CACHE -> STATS (consistent with clear())
-	{
-		std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
-		m_last_tid = -1;
-		m_last_tinfo.reset();
-	}
+	// {
+	// 	std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+	// 	m_last_tid = -1;
+	// 	m_last_tinfo.reset();
+	// }
 	{
 		std::unique_lock<std::mutex> stats_lock(m_stats_mutex);
 		if(m_sinsp_stats_v2 != nullptr) {
@@ -911,19 +912,19 @@ threadinfo_map_t::ptr_t sinsp_thread_manager::find_thread(int64_t tid, bool look
 	//
 	// Try looking up in our simple cache
 	//
-	{
-		std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
-		if(m_last_tid >= 0 && tid == m_last_tid && m_last_tinfo) {
-			if(m_sinsp_stats_v2 != nullptr) {
-				m_sinsp_stats_v2->m_n_cached_thread_lookups++;
-			}
-			// This allows us to avoid performing an actual timestamp lookup
-			// for something that may not need to be precise
-			m_last_tinfo->m_lastaccess_ts = m_timestamper.get_cached_ts();
-			m_last_tinfo->update_main_fdtable();
-			return m_last_tinfo;
-		}
-	}
+	// {
+	// 	std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+	// 	if(m_last_tid >= 0 && tid == m_last_tid && m_last_tinfo) {
+	// 		if(m_sinsp_stats_v2 != nullptr) {
+	// 			m_sinsp_stats_v2->m_n_cached_thread_lookups++;
+	// 		}
+	// 		// This allows us to avoid performing an actual timestamp lookup
+	// 		// for something that may not need to be precise
+	// 		m_last_tinfo->m_lastaccess_ts = m_timestamper.get_cached_ts();
+	// 		m_last_tinfo->update_main_fdtable();
+	// 		return m_last_tinfo;
+	// 	}
+	// }
 
 	threadinfo_map_t::ptr_t thr = m_threadtable.get(tid);
 
@@ -932,9 +933,9 @@ threadinfo_map_t::ptr_t sinsp_thread_manager::find_thread(int64_t tid, bool look
 			m_sinsp_stats_v2->m_n_noncached_thread_lookups++;
 		}
 		if(!lookup_only) {
-			std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
-			m_last_tid = tid;
-			m_last_tinfo = thr;
+			// std::unique_lock<std::mutex> cache_lock(m_cache_mutex);
+			// m_last_tid = tid;
+			// m_last_tinfo = thr;
 			thr->m_lastaccess_ts = m_timestamper.get_cached_ts();
 		}
 		thr->update_main_fdtable();
@@ -1160,7 +1161,8 @@ void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
 	}
 }
 
-std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_ancestor_process(int64_t tid, uint32_t n) {
+std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_ancestor_process(int64_t tid,
+                                                                             uint32_t n) {
 	auto mt = get_main_thread(tid);
 	for(uint32_t i = 0; i < n; i++) {
 		if(mt == nullptr) {

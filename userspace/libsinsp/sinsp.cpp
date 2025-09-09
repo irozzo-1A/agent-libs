@@ -1468,8 +1468,8 @@ int32_t sinsp::next(sinsp_evt** puevt, const sinsp_buffer_t buffer_h) {
 	// Store a couple of values that we'll need later inside the event.
 	// These are potentially used both for parsing the event for internal
 	// state management.
-	m_nevts.fetch_add(1);
-	evt->set_num(m_nevts.load());
+	// m_nevts.fetch_add(1);
+	evt->set_num(1);
 	set_lastevent_ts(ts);
 
 	if(/*IS_DEFAULT_SINSP_BUFFER(buffer) &&*/ m_auto_threads_purging) {
@@ -2084,16 +2084,18 @@ void sinsp::set_proc_scan_log_interval_ms(uint64_t val) {
 bool sinsp_thread_manager::remove_inactive_threads() {
 	const uint64_t last_event_ts = m_timestamper.get_cached_ts();
 
-	{
-		std::unique_lock<std::mutex> lock(m_flush_mutex);
-		if(m_last_flush_time_ns == 0) {
-			// Set the first table scan for 30 seconds in, so that we can spot bugs in the logic without
-			// having to wait for tens of minutes.
+	while(true) {
+		// std::unique_lock<std::mutex> lock(m_flush_mutex);
+		auto last_flush_ts = m_last_flush_time_ns.load();
+		auto next_flush_ts = last_flush_ts;
+		if(last_flush_ts == 0) {
+			// Set the first table scan for 30 seconds in, so that we can spot bugs in the logic
+			// without having to wait for tens of minutes.
 			if(m_threads_purging_scan_time_ns > 30 * ONE_SECOND_IN_NS) {
-				m_last_flush_time_ns =
-						last_event_ts - m_threads_purging_scan_time_ns + 30 * ONE_SECOND_IN_NS;
+				next_flush_ts =
+				        last_event_ts - m_threads_purging_scan_time_ns + 30 * ONE_SECOND_IN_NS;
 			} else {
-				m_last_flush_time_ns = last_event_ts - m_threads_purging_scan_time_ns;
+				next_flush_ts = last_event_ts - m_threads_purging_scan_time_ns;
 			}
 		}
 
@@ -2102,7 +2104,10 @@ bool sinsp_thread_manager::remove_inactive_threads() {
 		}
 
 		libsinsp_logger()->format(sinsp_logger::SEV_DEBUG, "Flushing thread table");
-		m_last_flush_time_ns = last_event_ts;
+
+		if(m_last_flush_time_ns.compare_exchange_weak(last_flush_ts, next_flush_ts)) {
+			break;
+		}
 	}
 
 	// Here we loop over the table in search of threads to delete. We remove:

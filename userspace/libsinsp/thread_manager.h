@@ -149,9 +149,7 @@ public:
 
 	void dump_threads_to_file(scap_dumper_t* dumper);
 
-	uint32_t get_thread_count() {
-		return (uint32_t)m_threadtable.size();
-	}
+	uint32_t get_thread_count() { return (uint32_t)m_threadtable.size(); }
 
 	threadinfo_map_t* get_threads() { return &m_threadtable; }
 
@@ -203,9 +201,7 @@ public:
 
 	// ---- libsinsp::state::table implementation ----
 
-	size_t entries_count() const override {
-		return m_threadtable.size();
-	}
+	size_t entries_count() const override { return m_threadtable.size(); }
 
 	void clear_entries() override {
 		std::unique_lock<std::shared_mutex> lock(m_threadtable_mutex);
@@ -293,12 +289,12 @@ public:
 	void thread_to_scap(sinsp_threadinfo& tinfo, scap_threadinfo* sctinfo);
 
 	inline uint64_t get_last_flush_time_ns() const {
-		std::unique_lock<std::mutex> lock(m_flush_mutex);
+		// std::unique_lock<std::mutex> lock(m_flush_mutex);
 		return m_last_flush_time_ns;
 	}
 
 	inline void set_last_flush_time_ns(uint64_t v) {
-		std::unique_lock<std::mutex> lock(m_flush_mutex);
+		// std::unique_lock<std::mutex> lock(m_flush_mutex);
 		m_last_flush_time_ns = v;
 	}
 
@@ -381,9 +377,9 @@ private:
 	 */
 	std::unordered_map<int64_t, std::shared_ptr<thread_group_info>> m_thread_groups;
 	threadinfo_map_t m_threadtable;
-	int64_t m_last_tid;
-	std::shared_ptr<sinsp_threadinfo> m_last_tinfo;
-	uint64_t m_last_flush_time_ns;
+	// int64_t m_last_tid;
+	// std::shared_ptr<sinsp_threadinfo> m_last_tinfo;
+	std::atomic_uint64_t m_last_flush_time_ns;
 	// Increased legacy default of 131072 in January 2024 to prevent
 	// possible drops due to full threadtable on more modern servers
 	const uint32_t m_thread_table_default_size = 262144;
@@ -405,13 +401,13 @@ private:
 	// Thread safety mutexes
 	mutable std::shared_mutex m_threadtable_mutex;  // Protects m_threadtable and related operations
 	mutable std::shared_mutex m_thread_groups_mutex;  // Protects m_thread_groups
-	mutable std::mutex m_cache_mutex;                 // Protects m_last_tid, m_last_tinfo
-	mutable std::mutex m_stats_mutex;                 // Protects statistics counters
-	mutable std::mutex m_config_mutex;                // Protects configuration parameters
-	mutable std::mutex m_flush_mutex;                 // Protects m_last_flush_time_ns
-	mutable std::mutex m_foreign_fields_mutex;        // Protects m_foreign_fields_accessors
-	mutable std::mutex m_foreign_tables_mutex;        // Protects m_foreign_tables
-	mutable std::mutex m_server_ports_mutex;          // Protects m_server_ports
+	// mutable std::mutex m_cache_mutex;                 // Protects m_last_tid, m_last_tinfo
+	mutable std::mutex m_stats_mutex;   // Protects statistics counters
+	mutable std::mutex m_config_mutex;  // Protects configuration parameters
+	// mutable std::mutex m_flush_mutex;                 // Protects m_last_flush_time_ns
+	mutable std::mutex m_foreign_fields_mutex;  // Protects m_foreign_fields_accessors
+	mutable std::mutex m_foreign_tables_mutex;  // Protects m_foreign_tables
+	mutable std::mutex m_server_ports_mutex;    // Protects m_server_ports
 
 	// Tables and fields names.
 	constexpr static auto s_thread_table_name = "threads";

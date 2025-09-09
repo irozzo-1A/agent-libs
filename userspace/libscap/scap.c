@@ -210,9 +210,9 @@ int32_t scap_next(scap_t* handle, scap_evt** pevent, uint16_t* pdevid, uint32_t*
 		res = handle->m_vtable->next(handle->m_engine, pevent, pdevid, pflags);
 	}
 
-	if(res == SCAP_SUCCESS) {
-		atomic_fetch_add(&handle->m_evtcnt, 1);
-	}
+	// if(res == SCAP_SUCCESS) {
+	// 	atomic_fetch_add(&handle->m_evtcnt, 1);
+	// }
 
 	return res;
 }
@@ -228,9 +228,9 @@ int32_t scap_buffer_next(scap_t* handle,
 		res = handle->m_vtable->next_from_buffer(handle->m_engine, buffer_h, pevent, pflags);
 	}
 
-	if(res == SCAP_SUCCESS) {
-		atomic_fetch_add(&handle->m_evtcnt, 1);
-	}
+	// if(res == SCAP_SUCCESS) {
+	// 	atomic_fetch_add(&handle->m_evtcnt, 1);
+	// }
 
 	return res;
 }

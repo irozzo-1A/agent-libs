@@ -66,10 +66,9 @@ static int ringbuf_array_set_max_entries() {
 }
 
 static int allocate_consumer_producer_positions() {
-	g_state.ringbuf_pos = 0;
-	g_state.cons_pos = (unsigned long *)calloc(g_state.n_required_buffers, sizeof(unsigned long));
-	g_state.prod_pos = (unsigned long *)calloc(g_state.n_required_buffers, sizeof(unsigned long));
-	if(g_state.cons_pos == NULL || g_state.prod_pos == NULL) {
+	g_state.ringbuf_positions = (struct ringbuffer_pos *)calloc(g_state.n_required_buffers,
+	                                                            sizeof(struct ringbuffer_pos));
+	if(g_state.ringbuf_positions == NULL) {
 		pman_print_error("failed to alloc memory for cons_pos and prod_pos");
 		return errno;
 	}
@@ -294,17 +293,17 @@ static inline void *ringbuf__get_first_ring_event(struct ring *r, int pos) {
 	/* If the consumer reaches the producer update the producer position to
 	 * get the newly collected events.
 	 */
-	if(g_state.cons_pos[pos] == g_state.prod_pos[pos]) {
+	if(g_state.ringbuf_positions[pos].consumer == g_state.ringbuf_positions[pos].producer) {
 		// We try to increment the producer and continue. It is likely that the producer
 		// has produced new events on this CPU and these events could have a timestamp
 		// lowest than all the other events in the other buffers.
-		g_state.prod_pos[pos] = smp_load_acquire(r->producer_pos);
-		if(g_state.cons_pos[pos] == g_state.prod_pos[pos]) {
+		g_state.ringbuf_positions[pos].producer = smp_load_acquire(r->producer_pos);
+		if(g_state.ringbuf_positions[pos].consumer == g_state.ringbuf_positions[pos].producer) {
 			return NULL;
 		}
 	}
 
-	len_ptr = r->data + (g_state.cons_pos[pos] & r->mask);
+	len_ptr = r->data + (g_state.ringbuf_positions[pos].consumer & r->mask);
 	len = smp_load_acquire(len_ptr);
 
 	/* The actual event is not yet committed */
@@ -319,8 +318,8 @@ static inline void *ringbuf__get_first_ring_event(struct ring *r, int pos) {
 		return (void *)len_ptr + BPF_RINGBUF_HDR_SZ;
 	} else {
 		/* Discard the event kernel side and update the consumer position */
-		g_state.cons_pos[pos] += roundup_len(len);
-		smp_store_release(r->consumer_pos, g_state.cons_pos[pos]);
+		g_state.ringbuf_positions[pos].consumer += roundup_len(len);
+		smp_store_release(r->consumer_pos, g_state.ringbuf_positions[pos].consumer);
 		return NULL;
 	}
 }
@@ -336,8 +335,9 @@ static void ringbuf__consume_first_event(struct ring_buffer *rb,
 	/* If the last consume operation was successful we can push the consumer position */
 	if(g_state.last_ring_read != -1) {
 		struct ring *r = rb->rings[g_state.last_ring_read];
-		g_state.cons_pos[g_state.last_ring_read] += g_state.last_event_size;
-		smp_store_release(r->consumer_pos, g_state.cons_pos[g_state.last_ring_read]);
+		g_state.ringbuf_positions[g_state.last_ring_read].consumer += g_state.last_event_size;
+		smp_store_release(r->consumer_pos,
+		                  g_state.ringbuf_positions[g_state.last_ring_read].consumer);
 	}
 
 	R_D_MSG("\n-----------------------------\nIterate over all the buffers\n");
@@ -373,21 +373,21 @@ void pman_consume_first_event(void **event_ptr, int16_t *buffer_id) {
 }
 
 static inline void *ringbuf__consume_first_ring_event(struct ring *r, int pos) {
-	smp_store_release(r->consumer_pos, g_state.cons_pos[pos]);
+	smp_store_release(r->consumer_pos, g_state.ringbuf_positions[pos].consumer);
 
 	/* If the consumer reaches the producer update the producer position to
 	 * get the newly collected events.
 	 */
-	if(g_state.cons_pos[pos] == g_state.prod_pos[pos]) {
+	if(g_state.ringbuf_positions[pos].consumer == g_state.ringbuf_positions[pos].producer) {
 		/* We try to increment the producer and continue. It is likely that the producer has
 		 * produced new events on this ring. */
-		g_state.prod_pos[pos] = smp_load_acquire(r->producer_pos);
-		if(g_state.cons_pos[pos] == g_state.prod_pos[pos]) {
+		g_state.ringbuf_positions[pos].producer = smp_load_acquire(r->producer_pos);
+		if(g_state.ringbuf_positions[pos].consumer == g_state.ringbuf_positions[pos].producer) {
 			return NULL;
 		}
 	}
 
-	int *len_ptr = r->data + (g_state.cons_pos[pos] & r->mask);
+	int *len_ptr = r->data + (g_state.ringbuf_positions[pos].consumer & r->mask);
 	int len = smp_load_acquire(len_ptr);
 
 	/* The actual event is not yet committed */
@@ -395,14 +395,14 @@ static inline void *ringbuf__consume_first_ring_event(struct ring *r, int pos) {
 		return NULL;
 	}
 
-	g_state.cons_pos[pos] += roundup_len(len);
+	g_state.ringbuf_positions[pos].consumer += roundup_len(len);
 
 	/* The sample is not discarded kernel side. */
 	if((len & BPF_RINGBUF_DISCARD_BIT) == 0) {
 		return (void *)len_ptr + BPF_RINGBUF_HDR_SZ;
 	} else {
 		/* Discard the event kernel side and update the consumer position */
-		smp_store_release(r->consumer_pos, g_state.cons_pos[pos]);
+		smp_store_release(r->consumer_pos, g_state.ringbuf_positions[pos].consumer);
 		return NULL;
 	}
 }

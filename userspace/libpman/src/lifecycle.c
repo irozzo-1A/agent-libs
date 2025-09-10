@@ -165,14 +165,9 @@ void pman_close_probe() {
 		}
 	}
 
-	if(g_state.cons_pos) {
-		free(g_state.cons_pos);
-		g_state.cons_pos = NULL;
-	}
-
-	if(g_state.prod_pos) {
-		free(g_state.prod_pos);
-		g_state.prod_pos = NULL;
+	if(g_state.ringbuf_positions) {
+		free(g_state.ringbuf_positions);
+		g_state.ringbuf_positions = NULL;
 	}
 
 	if(g_state.skel) {

@@ -40,6 +40,11 @@ limitations under the License.
 
 struct metrics_v2;
 
+struct __attribute__((aligned(64))) ringbuffer_pos {
+	unsigned long consumer;
+	unsigned long producer;
+};
+
 struct internal_state {
 	struct bpf_probe* skel;          /* bpf skeleton with all programs and maps. */
 	struct ring_buffer* rb_manager;  /* ring_buffer manager with all ring buffers. */
@@ -52,12 +57,11 @@ struct internal_state {
 	                    CPUs or all  available CPUs. */
 	bool allocate_online_only;   /* If true we allocate ring buffers only for online CPUs */
 	uint32_t n_required_buffers; /* number of ring buffers we need to allocate */
-	uint16_t cpus_for_each_buffer;  /* Users want a ring buffer every `cpus_for_each_buffer` CPUs.
-	                                   Here 0 means that the user specified an absolute number for
-	                                   the ring buffers. */
-	int ringbuf_pos;                /* actual ring buffer we are considering. */
-	unsigned long* cons_pos;        /* every ring buffer has a consumer position. */
-	unsigned long* prod_pos;        /* every ring buffer has a producer position. */
+	uint16_t cpus_for_each_buffer; /* Users want a ring buffer every `cpus_for_each_buffer` CPUs.
+	                                  Here 0 means that the user specified an absolute number for
+	                                  the ring buffers. */
+	struct ringbuffer_pos* ringbuf_positions; /* every ring buffer has a producer and a consumer
+	                                   position. */
 	int32_t inner_ringbuf_map_fd;   /* inner map used to configure the ring buffer array before
 	                                   loading phase. */
 	unsigned long buffer_bytes_dim; /* dimension of a single ring buffer in bytes. */

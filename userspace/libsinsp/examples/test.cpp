@@ -98,7 +98,8 @@ static std::shared_ptr<sinsp_filter_factory> filter_factory;
 // Prometheus metrics
 static std::shared_ptr<prometheus::Registry> metrics_registry;
 static std::shared_ptr<prometheus::Exposer> metrics_exposer;
-static std::map<uint32_t, std::shared_ptr<prometheus::Counter>> events_processed_counters; // Per-worker thread counters with labels
+static std::map<uint32_t, std::shared_ptr<prometheus::Counter>>
+        events_processed_counters;  // Per-worker thread counters with labels
 static std::shared_ptr<prometheus::Gauge> active_buffers_gauge;
 
 // Prometheus metrics aligned to libscap `scap_stats` fields
@@ -124,7 +125,7 @@ static std::shared_ptr<prometheus::Counter> scap_n_drops_pf;
 static std::shared_ptr<prometheus::Counter> scap_n_drops_bug;
 static std::shared_ptr<prometheus::Counter> scap_n_preemptions;
 static std::shared_ptr<prometheus::Counter> scap_n_suppressed;
-static std::shared_ptr<prometheus::Gauge>   scap_n_tids_suppressed_gauge;
+static std::shared_ptr<prometheus::Gauge> scap_n_tids_suppressed_gauge;
 
 sinsp_evt* get_event(sinsp& inspector,
                      std::function<void(const std::string&)> handle_error,
@@ -146,7 +147,6 @@ event_processing_stats process_events_loop(
         bool all_threads,
         uint64_t max_events,
         sinsp_buffer_t buffer_h = SINSP_INVALID_BUFFER_HANDLE);
-
 
 // Parallel event processing with multiple threads
 event_processing_stats process_events_parallel(
@@ -493,44 +493,70 @@ void initialize_prometheus_metrics(uint16_t metrics_port = 8080, uint32_t num_wo
 	                                        .Name("sinsp_events_processed_total")
 	                                        .Help("Total number of events processed per worker")
 	                                        .Register(*metrics_registry);
-	
+
 	// Create per-worker counters with labels
 	events_processed_counters.clear();
 	for(uint32_t i = 0; i < num_workers; ++i) {
 		auto counter = std::shared_ptr<prometheus::Counter>(
-			&events_processed_family.Add({{"worker", std::to_string(i)}})
-		);
+		        &events_processed_family.Add({{"worker", std::to_string(i)}}));
 		events_processed_counters[i] = counter;
 	}
 
 	// Create counters aligned to scap_stats
-	auto& scap_family = prometheus::BuildCounter().Name("sinsp_scap_stat").Help("libscap scap_stats counters").Register(*metrics_registry);
-	scap_n_evts = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_evts"}}));
-	scap_n_drops = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops"}}));
-	scap_n_drops_buffer = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer"}}));
-	scap_n_drops_buffer_clone_fork_enter = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_clone_fork_enter"}}));
-	scap_n_drops_buffer_clone_fork_exit = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_clone_fork_exit"}}));
-	scap_n_drops_buffer_execve_enter = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_execve_enter"}}));
-	scap_n_drops_buffer_execve_exit = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_execve_exit"}}));
-	scap_n_drops_buffer_connect_enter = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_connect_enter"}}));
-	scap_n_drops_buffer_connect_exit = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_connect_exit"}}));
-	scap_n_drops_buffer_open_enter = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_open_enter"}}));
-	scap_n_drops_buffer_open_exit = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_open_exit"}}));
-	scap_n_drops_buffer_dir_file_enter = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_dir_file_enter"}}));
-	scap_n_drops_buffer_dir_file_exit = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_dir_file_exit"}}));
-	scap_n_drops_buffer_other_interest_enter = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_other_interest_enter"}}));
-	scap_n_drops_buffer_other_interest_exit = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_other_interest_exit"}}));
-	scap_n_drops_buffer_close_exit = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_close_exit"}}));
-	scap_n_drops_buffer_proc_exit = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_buffer_proc_exit"}}));
-	scap_n_drops_scratch_map = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_scratch_map"}}));
-	scap_n_drops_pf = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_pf"}}));
-	scap_n_drops_bug = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_drops_bug"}}));
-	scap_n_preemptions = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_preemptions"}}));
-	scap_n_suppressed = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name","n_suppressed"}}));
+	auto& scap_family = prometheus::BuildCounter()
+	                            .Name("sinsp_scap_stat")
+	                            .Help("libscap scap_stats counters")
+	                            .Register(*metrics_registry);
+	scap_n_evts = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name", "n_evts"}}));
+	scap_n_drops = std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name", "n_drops"}}));
+	scap_n_drops_buffer =
+	        std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name", "n_drops_buffer"}}));
+	scap_n_drops_buffer_clone_fork_enter = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_clone_fork_enter"}}));
+	scap_n_drops_buffer_clone_fork_exit = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_clone_fork_exit"}}));
+	scap_n_drops_buffer_execve_enter = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_execve_enter"}}));
+	scap_n_drops_buffer_execve_exit = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_execve_exit"}}));
+	scap_n_drops_buffer_connect_enter = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_connect_enter"}}));
+	scap_n_drops_buffer_connect_exit = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_connect_exit"}}));
+	scap_n_drops_buffer_open_enter = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_open_enter"}}));
+	scap_n_drops_buffer_open_exit = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_open_exit"}}));
+	scap_n_drops_buffer_dir_file_enter = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_dir_file_enter"}}));
+	scap_n_drops_buffer_dir_file_exit = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_dir_file_exit"}}));
+	scap_n_drops_buffer_other_interest_enter = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_other_interest_enter"}}));
+	scap_n_drops_buffer_other_interest_exit = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_other_interest_exit"}}));
+	scap_n_drops_buffer_close_exit = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_close_exit"}}));
+	scap_n_drops_buffer_proc_exit = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_buffer_proc_exit"}}));
+	scap_n_drops_scratch_map = std::shared_ptr<prometheus::Counter>(
+	        &scap_family.Add({{"name", "n_drops_scratch_map"}}));
+	scap_n_drops_pf =
+	        std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name", "n_drops_pf"}}));
+	scap_n_drops_bug =
+	        std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name", "n_drops_bug"}}));
+	scap_n_preemptions =
+	        std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name", "n_preemptions"}}));
+	scap_n_suppressed =
+	        std::shared_ptr<prometheus::Counter>(&scap_family.Add({{"name", "n_suppressed"}}));
 
 	// A gauge for the number of currently suppressed threads
-	auto& scap_gauge_family = prometheus::BuildGauge().Name("sinsp_scap_stat_gauge").Help("libscap scap_stats gauges").Register(*metrics_registry);
-	scap_n_tids_suppressed_gauge = std::shared_ptr<prometheus::Gauge>(&scap_gauge_family.Add({{"name","n_tids_suppressed"}}));
+	auto& scap_gauge_family = prometheus::BuildGauge()
+	                                  .Name("sinsp_scap_stat_gauge")
+	                                  .Help("libscap scap_stats gauges")
+	                                  .Register(*metrics_registry);
+	scap_n_tids_suppressed_gauge = std::shared_ptr<prometheus::Gauge>(
+	        &scap_gauge_family.Add({{"name", "n_tids_suppressed"}}));
 
 	std::cout << "-- Prometheus metrics enabled on port " << metrics_port << std::endl;
 }
@@ -541,7 +567,8 @@ void update_scap_buffer_metrics(const scap_stats& stats) {
 		return;
 	}
 
-	// Maintain monotonic counters: set them to the absolute scap_stats values by incrementing the diff
+	// Maintain monotonic counters: set them to the absolute scap_stats values by incrementing the
+	// diff
 	auto inc_to = [](std::shared_ptr<prometheus::Counter>& c, uint64_t target) {
 		double current = c->Value();
 		double delta = static_cast<double>(target) - current;
@@ -742,7 +769,9 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 			break;
 		case 'c': {
 			if(p_option_seen) {
-				std::cerr << "Options -c/--buffers-num and -P/--processing-threads are mutually exclusive" << std::endl;
+				std::cerr << "Options -c/--buffers-num and -P/--processing-threads are mutually "
+				             "exclusive"
+				          << std::endl;
 				exit(EXIT_FAILURE);
 			}
 			char* err_ptr;
@@ -822,7 +851,9 @@ void parse_CLI_options(sinsp& inspector, int argc, char** argv) {
 			break;
 		case 'P':
 			if(c_option_seen) {
-				std::cerr << "Options -P/--processing-threads and -c/--buffers-num are mutually exclusive" << std::endl;
+				std::cerr << "Options -P/--processing-threads and -c/--buffers-num are mutually "
+				             "exclusive"
+				          << std::endl;
 				exit(EXIT_FAILURE);
 			}
 			num_processing_threads = std::atoi(optarg);
@@ -1017,8 +1048,9 @@ event_processing_stats process_events_loop(
 		if(ev != nullptr) {
 			uint64_t ts_ns = ev->get_ts();
 			stats.num_events++;
-			// Update prometheus stats every 10 seconds, we appoint the last buffer to update the metrics
-			// because the stats are global and we don't need to update them for each buffer.
+			// Update prometheus stats every 10 seconds, we appoint the last buffer to update the
+			// metrics because the stats are global and we don't need to update them for each
+			// buffer.
 			if(ts_ns - last_stats_update_ts > ten_seconds_ns && buffer_h == metrics_buffer_h) {
 				last_stats_update_ts = ts_ns;
 				scap_stats scap_stats;
@@ -1030,8 +1062,9 @@ event_processing_stats process_events_loop(
 				stats.num_samples++;
 				uint64_t events_diff = stats.num_events - stats.last_events;
 				long double curr_throughput = events_diff / (long double)1000;
-				// When not using multiple threads, the buffer_h is 0, so we need to use the max function to get the correct counter.
-				auto it = events_processed_counters.find(std::max(buffer_h-1, 0));
+				// When not using multiple threads, the buffer_h is 0, so we need to use the max
+				// function to get the correct counter.
+				auto it = events_processed_counters.find(std::max(buffer_h - 1, 0));
 				if(it != events_processed_counters.end()) {
 					it->second->Increment(events_diff);
 				}
@@ -1046,8 +1079,8 @@ event_processing_stats process_events_loop(
 					// Perftest mode does not print individual events but instead prints a running
 					// throughput every second
 					std::cout << "Worker: " << buffer_h << " Events: " << events_diff
-								<< " Events/ms: " << curr_throughput << " CPU: " << cpu_usage
-								<< "%" << std::endl;
+					          << " Events/ms: " << curr_throughput << " CPU: " << cpu_usage << "%"
+					          << std::endl;
 				}
 			}
 			auto thread = ev->get_thread_info();
@@ -1290,8 +1323,8 @@ int main(int argc, char** argv) {
 		          << std::endl;
 	}
 	if(stats.num_samples > 0) {
-		std::cout << "Average CPU usage: " << stats.cpu_total / stats.num_samples
-		          << "%" << std::endl;
+		std::cout << "Average CPU usage: " << stats.cpu_total / stats.num_samples << "%"
+		          << std::endl;
 	}
 
 	// Clear global inspector pointer before exit

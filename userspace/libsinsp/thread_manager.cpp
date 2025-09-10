@@ -319,7 +319,7 @@ std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::add_thread(
 	tinfo_shared_ptr->update_main_fdtable();
 
 	// Lock ordering: THREADTABLE (final operation)
-	int shard = tinfo_shared_ptr->m_tid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int shard = tinfo_shared_ptr->m_tid & (NUM_THREAD_TABLE_SHARDS - 1);
 	{
 		std::unique_lock<std::shared_mutex> lock(m_threadtable_mutexes[shard]);
 		return m_threadtables[shard].put(tinfo_shared_ptr);
@@ -443,7 +443,7 @@ void sinsp_thread_manager::remove_main_thread_fdtable(
 void sinsp_thread_manager::remove_thread(int64_t tid) {
 	std::shared_ptr<sinsp_threadinfo> thread_to_remove;
 
-	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int shard = tid & (NUM_THREAD_TABLE_SHARDS - 1);
 	// Step 1: Lock thread table for read (highest priority)
 	{
 		std::shared_lock<std::shared_mutex> lock(m_threadtable_mutexes[shard]);
@@ -568,7 +568,7 @@ void sinsp_thread_manager::remove_thread(int64_t tid) {
 		// Use thread manager method to eliminate cross-class deadlock risk
 		remove_child_from_parent(tid);
 
-		int pid_shard = thread_to_remove->m_pid % NUM_THREAD_TABLE_SHARDS;
+		unsigned int pid_shard = thread_to_remove->m_pid & (NUM_THREAD_TABLE_SHARDS - 1);
 		// Lock ordering: THREADTABLE -> THREAD_GROUPS (consistent with clear() order)
 		{
 			std::unique_lock<std::shared_mutex> lock(m_threadtable_mutexes[pid_shard]);
@@ -941,7 +941,7 @@ threadinfo_map_t::ptr_t sinsp_thread_manager::find_thread(int64_t tid, bool look
 	// 	}
 	// }
 
-	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int shard = tid & (NUM_THREAD_TABLE_SHARDS - 1);
 	threadinfo_map_t::ptr_t thr = m_threadtables[shard].get(tid);
 
 	if(thr) {
@@ -1091,17 +1091,17 @@ std::unique_ptr<libsinsp::state::table_entry> sinsp_thread_manager::new_entry() 
 // Thread hierarchy operations (eliminates cross-class deadlocks)
 
 std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_parent_thread(int64_t tid) {
-	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int shard = tid & (NUM_THREAD_TABLE_SHARDS - 1);
 	auto thread = m_threadtables[shard].get(tid);
 	if(!thread) {
 		return nullptr;
 	}
-	int parent_shard = thread->m_ptid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int parent_shard = thread->m_ptid & (NUM_THREAD_TABLE_SHARDS - 1);
 	return m_threadtables[parent_shard].get(thread->m_ptid);
 }
 
 std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_main_thread(int64_t tid) {
-	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int shard = tid & (NUM_THREAD_TABLE_SHARDS - 1);
 	auto thread = m_threadtables[shard].get(tid);
 	if(!thread) {
 		return nullptr;
@@ -1123,7 +1123,7 @@ std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_main_thread(int64_t 
 }
 
 void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper_tid) {
-	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int shard = tid & (NUM_THREAD_TABLE_SHARDS - 1);
 	auto thread = m_threadtables[shard].get(tid);
 	if(!thread || thread->m_children.size() == 0) {
 		return;
@@ -1131,7 +1131,7 @@ void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper
 
 	std::shared_ptr<sinsp_threadinfo> reaper;
 	if(reaper_tid > 0) {
-		int reaper_shard = reaper_tid % NUM_THREAD_TABLE_SHARDS;
+		unsigned int reaper_shard = reaper_tid & (NUM_THREAD_TABLE_SHARDS - 1);
 		reaper = m_threadtables[reaper_shard].get(reaper_tid);
 		if(reaper == thread) {
 			throw sinsp_exception(
@@ -1157,13 +1157,13 @@ void sinsp_thread_manager::assign_children_to_reaper(int64_t tid, int64_t reaper
 }
 
 void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
-	int shard = tid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int shard = tid & (NUM_THREAD_TABLE_SHARDS - 1);
 	auto thread = m_threadtables[shard].get(tid);
 	if(!thread) {
 		return;
 	}
 
-	int ptid_shard = thread->m_ptid % NUM_THREAD_TABLE_SHARDS;
+	unsigned int ptid_shard = thread->m_ptid & (NUM_THREAD_TABLE_SHARDS - 1);
 	auto parent = m_threadtables[ptid_shard].get(thread->m_ptid);
 	if(parent == nullptr) {
 		return;

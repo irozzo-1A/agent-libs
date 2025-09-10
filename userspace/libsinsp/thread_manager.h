@@ -251,7 +251,7 @@ public:
 		// or should we just erase the table entry?
 		// todo(jasondellaluce): should we make m_tid_to_remove a list, in case
 		// we have more than one thread removed in a given event loop iteration?
-		int shard = key % NUM_THREAD_TABLE_SHARDS;
+		unsigned int shard = key & (NUM_THREAD_TABLE_SHARDS - 1);
 		{
 			std::shared_lock<std::shared_mutex> lock(m_threadtable_mutexes[shard]);
 			if(m_threadtables[shard].get(key)) {

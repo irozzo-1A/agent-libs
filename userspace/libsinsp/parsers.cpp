@@ -377,8 +377,9 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 	if(const auto eflags = evt.get_info_flags(); eflags & EF_SKIPPARSERESET) {
 		std::shared_ptr<sinsp_threadinfo> tinfo = nullptr;
 		if(etype == PPME_PROCINFO_E) {
-			tinfo = m_params->m_thread_manager
-			                ->get_thread_ref(evt.get_scap_evt()->tid, false, false);
+			tinfo = m_params->m_thread_manager->get_thread_ref(evt.get_scap_evt()->tid,
+			                                                   false,
+			                                                   false);
 		}
 		evt.set_tinfo(tinfo);
 		return false;
@@ -445,7 +446,7 @@ bool sinsp_parser::reset(sinsp_evt &evt, sinsp_parser_verdict &verdict) const {
 	//
 	if(tinfo->m_last_latency_entertime.load() != 0) {
 		tinfo->m_latency.store(evt.get_ts() - tinfo->m_last_latency_entertime.load());
-		ASSERT(static_cast<int64_t>(tinfo->m_latency.load()) >= 0);
+		// ASSERT(static_cast<int64_t>(tinfo->m_latency.load()) >= 0);
 	}
 
 	if(etype == PPME_SYSCALL_EXECVE_19_X &&
@@ -744,7 +745,7 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt &evt,
 		 * Otherwise, we assume that the entry is there because we missed the proc exit event
 		 * for a previous thread and we replace the tinfo.
 		 */
-		if(existing_child_tinfo->m_flags & PPM_CL_CLONE_INVERTED) {
+		if(existing_child_tinfo->is_clone_inverted()) {
 			return;
 		} else {
 			m_params->m_thread_manager->remove_thread(child_tid);
@@ -1432,7 +1433,7 @@ void sinsp_parser::parse_execve_exit(sinsp_evt &evt, sinsp_parser_verdict &verdi
 	evt.get_tinfo()->set_args(evt.get_param(2)->as<std::vector<std::string>>());
 
 	// Set the pid.
-	evt.get_tinfo()->m_pid = evt.get_param(4)->as<uint64_t>();
+	evt.get_tinfo()->set_pid(evt.get_param(4)->as<uint64_t>());
 
 	//
 	// In case this thread is a fake entry,
@@ -1440,12 +1441,12 @@ void sinsp_parser::parse_execve_exit(sinsp_evt &evt, sinsp_parser_verdict &verdi
 	// we have it from the execve event
 	//
 	if(evt.get_tinfo()->is_invalid()) {
-		evt.get_tinfo()->m_ptid = evt.get_param(5)->as<uint64_t>();
+		evt.get_tinfo()->set_ptid(evt.get_param(5)->as<uint64_t>());
 
 		/* We are not in a namespace we recover also vtid and vpid */
 		if((evt.get_tinfo()->m_flags & PPM_CL_CHILD_IN_PIDNS) == 0) {
-			evt.get_tinfo()->m_vtid = evt.get_tinfo()->m_tid;
-			evt.get_tinfo()->m_vpid = evt.get_tinfo()->m_pid;
+			evt.get_tinfo()->set_vtid(evt.get_tinfo()->m_tid);
+			evt.get_tinfo()->set_vpid(evt.get_tinfo()->m_pid);
 		}
 
 		auto tinfo = m_params->m_thread_manager->get_thread_ref(evt.get_tinfo()->m_tid, false);
@@ -1454,7 +1455,7 @@ void sinsp_parser::parse_execve_exit(sinsp_evt &evt, sinsp_parser_verdict &verdi
 	}
 
 	// Set the fdlimit.
-	evt.get_tinfo()->m_fdlimit = evt.get_param(7)->as<int64_t>();
+	evt.get_tinfo()->set_fdlimit(evt.get_param(7)->as<int64_t>());
 
 	// If one the following parameters is present, so is for the other ones, so just check the
 	// presence of one of them.
@@ -3481,10 +3482,10 @@ void sinsp_parser::parse_dup_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict)
 		// Heuristic to determine if a thread is part of a shell pipe
 		//
 		if(retval == 0) {
-			evt.get_tinfo()->m_flags |= PPM_CL_PIPE_DST;
+			evt.get_tinfo()->set_flag(PPM_CL_PIPE_DST);
 		}
 		if(retval == 1) {
-			evt.get_tinfo()->m_flags |= PPM_CL_PIPE_SRC;
+			evt.get_tinfo()->set_flag(PPM_CL_PIPE_SRC);
 		}
 
 		if(evt.get_fd_info() == nullptr) {

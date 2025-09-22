@@ -1169,19 +1169,8 @@ void sinsp_thread_manager::remove_child_from_parent(int64_t tid) {
 		return;
 	}
 
-	parent->m_not_expired_children--;
-	if((parent->m_children.size() - parent->m_not_expired_children) >=
-	   DEFAULT_EXPIRED_CHILDREN_THRESHOLD) {
-		// Clean expired children within the same lock
-		auto child = parent->m_children.begin();
-		while(child != parent->m_children.end()) {
-			if(child->expired()) {
-				child = parent->m_children.erase(child);
-				continue;
-			}
-			child++;
-		}
-	}
+	// Use the thread-safe method to remove the child
+	parent->remove_child_by_tid(tid);
 }
 
 std::shared_ptr<sinsp_threadinfo> sinsp_thread_manager::get_ancestor_process(int64_t tid,

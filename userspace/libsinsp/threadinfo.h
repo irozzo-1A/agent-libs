@@ -396,12 +396,21 @@ public:
 	void assign_children_to_reaper(sinsp_threadinfo* reaper);
 
 	inline void add_child(const std::shared_ptr<sinsp_threadinfo>& child) {
-		std::unique_lock<std::shared_mutex> lock(m_mutex);
-		m_children.push_front(child);
-		/* Set current thread as parent */
-		child->m_ptid = m_tid;
-		/* Increment the number of not expired children */
-		m_not_expired_children++;
+		/* Then, add to parent's children list (acquire parent's mutex) */
+		int64_t tmp_tid;
+		{
+			std::unique_lock<std::shared_mutex> lock(m_mutex);
+			m_children.push_front(child);
+			/* Increment the number of not expired children */
+			m_not_expired_children++;
+			tmp_tid = m_tid;
+		}
+
+		/* First, set current thread as parent (acquire child's mutex) */
+		{
+			std::unique_lock<std::shared_mutex> child_lock(child->m_mutex);
+			child->m_ptid = tmp_tid;
+		}
 	}
 
 	/* We call it immediately before removing the thread from the thread table. */
@@ -418,6 +427,27 @@ public:
 		if((parent->m_children.size() - parent->m_not_expired_children) >=
 		   DEFAULT_EXPIRED_CHILDREN_THRESHOLD) {
 			parent->clean_expired_children();
+		}
+	}
+
+	/*!
+	  \brief Remove a child from this thread's children list (called by thread manager).
+	  \param child_tid The thread ID of the child to remove.
+	*/
+	inline void remove_child_by_tid(int64_t child_tid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_not_expired_children--;
+
+		/* Clean expired children if necessary. */
+		if((m_children.size() - m_not_expired_children) >= DEFAULT_EXPIRED_CHILDREN_THRESHOLD) {
+			auto child = m_children.begin();
+			while(child != m_children.end()) {
+				if(child->expired()) {
+					child = m_children.erase(child);
+					continue;
+				}
+				child++;
+			}
 		}
 	}
 
@@ -666,8 +696,6 @@ public:
 	        const std::function<std::string(sinsp_threadinfo*)>& get_field_str,
 	        bool is_virtual_id = false);
 
-
-
 	inline void update_main_fdtable() {
 		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		auto fdtable = get_fd_table_unlocked();
@@ -679,6 +707,60 @@ public:
 	inline void set_flag(uint32_t flag) {
 		std::unique_lock<std::shared_mutex> lock(m_mutex);
 		m_flags |= flag;
+	}
+
+	/*!
+	  \brief Thread-safe setter for parent thread ID.
+	  \param ptid The parent thread ID to set.
+	*/
+	inline void set_ptid(int64_t ptid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_ptid = ptid;
+	}
+
+	/*!
+	  \brief Thread-safe setter for virtual thread ID.
+	  \param vtid The virtual thread ID to set.
+	*/
+	inline void set_vtid(int64_t vtid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_vtid = vtid;
+	}
+
+	/*!
+	  \brief Thread-safe setter for virtual process ID.
+	  \param vpid The virtual process ID to set.
+	*/
+	inline void set_vpid(int64_t vpid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_vpid = vpid;
+	}
+
+	/*!
+	  \brief Thread-safe setter for file descriptor limit.
+	  \param fdlimit The file descriptor limit to set.
+	*/
+	inline void set_fdlimit(int64_t fdlimit) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_fdlimit = fdlimit;
+	}
+
+	/*!
+	  \brief Thread-safe setter for process ID.
+	  \param pid The process ID to set.
+	*/
+	inline void set_pid(int64_t pid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_pid = pid;
+	}
+
+	/*!
+	  \brief Check if the thread has the PPM_CL_CLONE_INVERTED flag set.
+	  \return true if the flag is set, false otherwise.
+	*/
+	inline bool is_clone_inverted() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return (m_flags & PPM_CL_CLONE_INVERTED) != 0;
 	}
 
 	void set_exepath(std::string&& exepath);

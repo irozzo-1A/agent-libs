@@ -83,7 +83,8 @@ public:
 
 	inline int64_t get_tgroup_pid() const { return m_pid; }
 
-	inline const std::list<std::weak_ptr<sinsp_threadinfo>>& get_thread_list() const {
+	inline std::list<std::weak_ptr<sinsp_threadinfo>> get_thread_list() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		return m_threads;
 	}
 

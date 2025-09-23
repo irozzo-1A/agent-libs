@@ -228,6 +228,39 @@ public:
 	}
 
 	/*!
+	  \brief Return the thread group info.
+	*/
+	inline std::shared_ptr<thread_group_info> get_tginfo() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_tginfo;
+	}
+
+	inline int64_t get_pid() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_pid;
+	}
+
+	inline int64_t get_vpid() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_vpid;
+	}
+
+	inline int64_t get_ptid() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_ptid;
+	}
+
+	inline int64_t get_tid() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_tid;
+	}
+
+	inline int64_t get_vtid() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_vtid;
+	}
+
+	/*!
 	    \brief Return the number of alive threads in the thread group, including the thread leader.
 	*/
 	inline uint64_t get_num_threads() const { return m_tginfo ? m_tginfo->get_thread_count() : 0; }
@@ -710,6 +743,38 @@ public:
 	}
 
 	/*!
+	  \brief Thread-safe getter for flags.
+	  \return The flags value.
+	*/
+	inline uint32_t get_flags() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_flags;
+	}
+
+	inline bool has_flag(uint32_t flag) const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_flags & flag;
+	}
+
+	/*!
+	  \brief Thread-safe setter for flags (complete assignment).
+	  \param flags The flags value to set.
+	*/
+	inline void set_flags(uint32_t flags) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_flags = flags;
+	}
+
+	/*!
+	  \brief Thread-safe setter for thread ID.
+	  \param tid The thread ID to set.
+	*/
+	inline void set_tid(int64_t tid) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_tid = tid;
+	}
+
+	/*!
 	  \brief Thread-safe setter for parent thread ID.
 	  \param ptid The parent thread ID to set.
 	*/
@@ -737,6 +802,15 @@ public:
 	}
 
 	/*!
+	  \brief Thread-safe setter for thread group info.
+	  \param tginfo The thread group info to set.
+	*/
+	inline void set_tginfo(const std::shared_ptr<thread_group_info>& tginfo) {
+		std::unique_lock<std::shared_mutex> lock(m_mutex);
+		m_tginfo = tginfo;
+	}
+
+	/*!
 	  \brief Thread-safe setter for file descriptor limit.
 	  \param fdlimit The file descriptor limit to set.
 	*/
@@ -761,6 +835,15 @@ public:
 	inline bool is_clone_inverted() const {
 		std::shared_lock<std::shared_mutex> lock(m_mutex);
 		return (m_flags & PPM_CL_CLONE_INVERTED) != 0;
+	}
+
+	/*!
+	  \brief Return the children of the thread.
+	  \return The children of the thread.
+	*/
+	inline std::list<std::weak_ptr<sinsp_threadinfo>> get_children() const {
+		std::shared_lock<std::shared_mutex> lock(m_mutex);
+		return m_children;
 	}
 
 	void set_exepath(std::string&& exepath);

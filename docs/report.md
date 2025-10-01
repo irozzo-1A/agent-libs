@@ -65,6 +65,8 @@
 | fcntl                   | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | fdatasync               | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | fgetxattr               | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
+| file_getattr            | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
+| file_setattr            | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | finit_module            | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | flistxattr              | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | flock                   | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
@@ -116,6 +118,7 @@
 | gettimeofday            | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | getuid                  | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | getxattr                | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
+| getxattrat              | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | init_module             | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | inotify_add_watch       | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | inotify_init            | 🟢        | ppc64le,s390x,x86_64                             |
@@ -151,6 +154,7 @@
 | listen                  | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | listmount               | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | listxattr               | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
+| listxattrat             | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | llistxattr              | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | lookup_dcookie          | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | lremovexattr            | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
@@ -211,6 +215,7 @@
 | open                    | 🟢        | ppc64le,s390x,x86_64                             |
 | open_by_handle_at       | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | open_tree               | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
+| open_tree_attr          | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | openat                  | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | openat2                 | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | pause                   | 🟡        | ppc64le,s390x,x86_64                             |
@@ -259,6 +264,7 @@
 | recvmsg                 | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | remap_file_pages        | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | removexattr             | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
+| removexattrat           | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | rename                  | 🟢        | ppc64le,s390x,x86_64                             |
 | renameat                | 🟢        | aarch64,ppc64le,s390x,x86_64                     |
 | renameat2               | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
@@ -330,6 +336,7 @@
 | settimeofday            | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | setuid                  | 🟢        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | setxattr                | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
+| setxattrat              | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | sgetmask                | 🟡        | ppc64le                                          |
 | shmat                   | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |
 | shmctl                  | 🟡        | aarch64,loongarch64,ppc64le,riscv64,s390x,x86_64 |

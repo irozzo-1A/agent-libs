@@ -1209,8 +1209,7 @@ TEST_F(sys_call_test, getsetresuid_and_gid) {
 			tinfo = sinsp->m_thread_manager->get_thread(evt->get_tid()).get();
 		}
 		return tinfo->m_comm != "sudo" && tinfo->m_pid == self &&
-		       (type == PPME_USER_ADDED_E || type == PPME_USER_ADDED_X ||
-		        type == PPME_GROUP_ADDED_E || type == PPME_GROUP_ADDED_X ||
+		       (type == PPME_USER_ADDED_X || type == PPME_GROUP_ADDED_X ||
 		        type == PPME_SYSCALL_GETRESUID_X || type == PPME_SYSCALL_GETRESGID_X ||
 		        type == PPME_SYSCALL_SETRESUID_X || type == PPME_SYSCALL_SETRESGID_X);
 	};
@@ -1231,8 +1230,10 @@ TEST_F(sys_call_test, getsetresuid_and_gid) {
 		EXPECT_EQ(0, res);
 		res = setresgid(test_gid, -1, -1);
 		EXPECT_EQ(0, res);
-		getresuid(uids, uids + 1, uids + 2);
-		getresgid(gids, gids + 1, gids + 2);
+		res = getresuid(uids, uids + 1, uids + 2);
+		EXPECT_EQ(0, res);
+		res = getresgid(gids, gids + 1, gids + 2);
+		EXPECT_EQ(0, res);
 	};
 
 	//
@@ -1307,6 +1308,10 @@ TEST_F(sys_call_test, getsetresuid_and_gid) {
 		                   event_capture::do_nothing,
 		                   after_capture);
 	});
+	EXPECT_TRUE(getresuid_ok);
+	EXPECT_TRUE(getresgid_ok);
+	EXPECT_TRUE(setresuid_ok);
+	EXPECT_TRUE(setresgid_ok);
 	EXPECT_EQ(4, callnum);
 }
 

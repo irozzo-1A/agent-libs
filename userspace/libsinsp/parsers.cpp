@@ -969,7 +969,7 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt &evt,
 	                              uid,
 	                              gid,
 	                              must_notify_thread_user_update());
-	m_usergroup_manager->add_group("", child_tinfo->m_pid, gid, must_notify_thread_user_update());
+	m_usergroup_manager->add_group("", child_tinfo->m_pid, gid, must_notify_thread_group_update());
 
 	// Set cgroups
 	if(const auto cgroups_param = evt.get_param(14); !cgroups_param->empty()) {
@@ -1376,7 +1376,7 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt &evt, sinsp_parser_verdict &
 	                              uid,
 	                              gid,
 	                              must_notify_thread_user_update());
-	m_usergroup_manager->add_group("", child_tinfo->m_pid, gid, must_notify_thread_user_update());
+	m_usergroup_manager->add_group("", child_tinfo->m_pid, gid, must_notify_thread_group_update());
 
 	// Set cgroups
 	if(const auto cgroups_param = evt.get_param(14); !cgroups_param->empty()) {
@@ -3921,10 +3921,10 @@ void sinsp_parser::set_evt_thread_user(sinsp_evt &evt, const sinsp_evt_param &eu
 	ti->m_uid = euid_param.as<uint32_t>();
 	std::string container_id = m_plugin_tables.get_container_id(*ti);
 	m_usergroup_manager->add_user(container_id,
-	                              evt.get_tid(),
+	                              ti->m_pid,
 	                              ti->m_uid,
 	                              ti->m_gid,
-	                              must_notify_thread_group_update());
+	                              must_notify_thread_user_update());
 }
 
 void sinsp_parser::set_evt_thread_group(sinsp_evt &evt, const sinsp_evt_param &egid_param) const {
@@ -3940,7 +3940,7 @@ void sinsp_parser::set_evt_thread_group(sinsp_evt &evt, const sinsp_evt_param &e
 	ti->m_gid = egid_param.as<uint32_t>();
 	std::string container_id = m_plugin_tables.get_container_id(*ti);
 	m_usergroup_manager->add_group(container_id,
-	                               evt.get_tid(),
+	                               ti->m_pid,
 	                               ti->m_gid,
 	                               must_notify_thread_group_update());
 }

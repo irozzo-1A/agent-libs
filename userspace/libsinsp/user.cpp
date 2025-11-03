@@ -252,6 +252,10 @@ scap_groupinfo *sinsp_usergroup_manager::add_group(const std::string &container_
                                                    int64_t pid,
                                                    uint32_t gid,
                                                    bool notify) {
+	if(auto gr = get_group(container_id, gid); gr != nullptr) {
+		return gr;
+	}
+
 	if(gid == 0) {
 		return add_group(container_id, pid, gid, "root", notify);
 	} else {
@@ -519,6 +523,10 @@ scap_userinfo *sinsp_usergroup_manager::add_user(const std::string &container_id
                                                  uint32_t uid,
                                                  uint32_t gid,
                                                  bool notify) {
+	if(auto usr = get_user(container_id, uid); usr != nullptr) {
+		return usr;
+	}
+
 	if(uid == 0) {
 		return add_user(container_id, pid, uid, gid, "root", "/root", {}, notify);
 	} else {

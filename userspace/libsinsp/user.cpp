@@ -259,7 +259,7 @@ scap_groupinfo *sinsp_usergroup_manager::add_group(const std::string &container_
 	if(gid == 0) {
 		return add_group(container_id, pid, gid, "root", notify);
 	} else {
-		return add_group(container_id, pid, gid, "", notify);
+		return add_group(container_id, pid, gid, {}, notify);
 	}
 }
 
@@ -402,7 +402,7 @@ scap_groupinfo *sinsp_usergroup_manager::add_host_group(uint32_t gid,
 	                          name.data());
 
 	scap_groupinfo *gr = nullptr;
-	if(name.data()) {
+	if(!name.empty()) {
 		gr = groupinfo_map_insert(m_grouplist[""], gid, name);
 	} else {
 #ifdef HAVE_GRP_H

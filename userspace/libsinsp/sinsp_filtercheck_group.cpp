@@ -55,15 +55,15 @@ uint8_t* sinsp_filter_check_group::extract_single(sinsp_evt* evt,
 
 	switch(m_field_id) {
 	case TYPE_GID:
-		m_gid = tinfo->m_gid;
-		return extract_single_val(m_gid, len);
+		m_gid = tinfo->get_gid();
+		RETURN_EXTRACT_VAR(m_gid);
 	case TYPE_NAME: {
 		auto container_id = m_inspector->m_plugin_tables.get_container_id(*tinfo);
 		if(!m_inspector->m_usergroup_manager->with_group(
 		           container_id,
-		           tinfo->m_gid,
+		           tinfo->get_gid(),
 		           [this](const scap_groupinfo& g) { m_name = g.name; })) {
-			m_name = (tinfo->m_gid == 0) ? "root" : "<NA>";
+			m_name = (tinfo->get_gid() == 0) ? "root" : "<NA>";
 		}
 		return extract_single_string(m_name, len, sanitize_strings);
 	}

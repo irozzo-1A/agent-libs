@@ -19,6 +19,7 @@ limitations under the License.
 #include <libsinsp/sinsp_filtercheck_thread.h>
 #include <libsinsp/sinsp.h>
 #include <libsinsp/sinsp_int.h>
+#include <libsinsp/atomic_helpers.h>
 
 using namespace std;
 
@@ -1077,58 +1078,62 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		}
 		return extract_single_val(m_val.s64, len);
 	case TYPE_PID:
-		if(!should_extract_xid(tinfo->m_pid)) {
+		m_val.s64 = tinfo->get_pid();
+		if(!should_extract_xid(m_val.s64)) {
 			return NULL;
 		}
-		return extract_single_val(tinfo->m_pid, len);
+		RETURN_EXTRACT_VAR(m_val.s64);
 	case TYPE_SID:
-		return extract_single_val(tinfo->m_sid, len);
+		m_val.s64 = tinfo->get_sid();
+		RETURN_EXTRACT_VAR(m_val.s64);
 	case TYPE_VPGID:
-		return extract_single_val(tinfo->m_vpgid, len);
+		m_val.s64 = tinfo->get_vpgid();
+		RETURN_EXTRACT_VAR(m_val.s64);
 	case TYPE_SID_NAME:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_sid; },
+		        [](sinsp_threadinfo* t) { return t->get_sid(); },
 		        [](sinsp_threadinfo* t) { return t->get_comm(); },
 		        true);
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_SID_EXE:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_sid; },
+		        [](sinsp_threadinfo* t) { return t->get_sid(); },
 		        [](sinsp_threadinfo* t) { return t->get_exe(); },
 		        true);
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_SID_EXEPATH:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_sid; },
+		        [](sinsp_threadinfo* t) { return t->get_sid(); },
 		        [](sinsp_threadinfo* t) { return t->get_exepath(); },
 		        true);
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_VPGID_NAME:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_vpgid; },
+		        [](sinsp_threadinfo* t) { return t->get_vpgid(); },
 		        [](sinsp_threadinfo* t) { return t->get_comm(); },
 		        true);
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_VPGID_EXE:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_vpgid; },
+		        [](sinsp_threadinfo* t) { return t->get_vpgid(); },
 		        [](sinsp_threadinfo* t) { return t->get_exe(); },
 		        true);
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_VPGID_EXEPATH:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_vpgid; },
+		        [](sinsp_threadinfo* t) { return t->get_vpgid(); },
 		        [](sinsp_threadinfo* t) { return t->get_exepath(); },
 		        true);
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_TTY:
-		return extract_single_val(tinfo->m_tty, len);
+		m_val.u32 = tinfo->get_tty();
+		RETURN_EXTRACT_VAR(m_val.u32);
 	case TYPE_NAME:
 		m_tstr = tinfo->get_comm();
 		return extract_single_string(m_tstr, len, sanitize_strings);
@@ -1142,8 +1147,9 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		m_tstr.clear();
 
 		if(m_argid >= 0) {
-			if(static_cast<uint32_t>(m_argid) < (uint32_t)tinfo->m_args.size()) {
-				m_tstr = tinfo->m_args[m_argid];
+			auto args = tinfo->get_args();
+			if(static_cast<uint32_t>(m_argid) < (uint32_t)args.size()) {
+				m_tstr = args[m_argid];
 			}
 		} else {
 			sinsp_threadinfo::populate_args(m_tstr, tinfo);
@@ -1221,7 +1227,7 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 			for(int32_t j = 0; j < 20; j++)  // up to 20 levels, but realistically we will exit way
 			                                 // before given the mt nullptr check
 			{
-				mt = m_inspector->m_thread_manager->find_thread(mt->m_ptid, true).get();
+				mt = m_inspector->m_thread_manager->find_thread(mt->get_ptid(), true).get();
 				if(mt == NULL) {
 					break;
 				}
@@ -1235,7 +1241,7 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		} else if(m_argid > 0) {
 			// start parent lineage traversal
 			for(int32_t j = 0; j < m_argid; j++) {
-				mt = m_inspector->m_thread_manager->find_thread(mt->m_ptid, true).get();
+				mt = m_inspector->m_thread_manager->find_thread(mt->get_ptid(), true).get();
 				if(mt == NULL) {
 					return NULL;
 				}
@@ -1254,11 +1260,12 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 	case TYPE_EXELINE: {
 		m_tstr = tinfo->get_exe() + " ";
 
+		auto args = tinfo->get_args();
 		uint32_t j;
-		uint32_t nargs = (uint32_t)tinfo->m_args.size();
+		uint32_t nargs = (uint32_t)args.size();
 
 		for(j = 0; j < nargs; j++) {
-			m_tstr += tinfo->m_args[j];
+			m_tstr += args[j];
 			if(j < nargs - 1) {
 				m_tstr += ' ';
 			}
@@ -1313,10 +1320,11 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 			return NULL;
 		}
 
-		if(!should_extract_xid(mt->m_pid)) {
+		m_val.s64 = mt->get_pid();
+		if(!should_extract_xid(m_val.s64)) {
 			return NULL;
 		}
-		return extract_single_val(mt->m_pid, len);
+		RETURN_EXTRACT_VAR(m_val.s64);
 	}
 	case TYPE_PNAME: {
 		auto ptinfo = m_inspector->m_thread_manager->get_ancestor_process(*tinfo);
@@ -1373,10 +1381,11 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 			return NULL;
 		}
 
-		if(!should_extract_xid(mt->m_pid)) {
+		m_val.s64 = mt->get_pid();
+		if(!should_extract_xid(m_val.s64)) {
 			return NULL;
 		}
-		return extract_single_val(mt->m_pid, len);
+		RETURN_EXTRACT_VAR(m_val.s64);
 	}
 	case TYPE_ANAME: {
 		if(m_argid == -1) {
@@ -1494,11 +1503,14 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 			}
 		}
 
-		sinsp_thread_manager::visitor_func_t check_thread_for_shell = [&res](sinsp_threadinfo* pt) {
-			size_t len = pt->m_comm.size();
+		sinsp_thread_manager::visitor_func_t check_thread_for_shell = [this,
+		                                                               &res](sinsp_threadinfo* pt) {
+			auto comm = pt->get_comm();
+			size_t len = comm.size();
 
-			if(len >= 2 && pt->m_comm[len - 2] == 's' && pt->m_comm[len - 1] == 'h') {
-				res = &pt->m_pid;
+			if(len >= 2 && comm[len - 2] == 's' && comm[len - 1] == 'h') {
+				m_val.s64 = pt->get_pid();
+				res = &m_val.s64;
 			}
 
 			return true;
@@ -1516,8 +1528,8 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		return extract_single_val(*res, len);
 	}
 	case TYPE_DURATION: {
-		if(tinfo->m_clone_ts != 0) {
-			m_val.s64 = evt->get_ts() - tinfo->m_clone_ts;
+		if(tinfo->get_clone_ts() != 0) {
+			m_val.s64 = evt->get_ts() - tinfo->get_clone_ts();
 			ASSERT(m_val.s64 > 0);
 			return extract_single_val(m_val.s64, len);
 		} else {
@@ -1530,8 +1542,8 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 			return NULL;
 		}
 
-		if(ptinfo->m_clone_ts != 0) {
-			m_val.s64 = evt->get_ts() - ptinfo->m_clone_ts;
+		if(ptinfo->get_clone_ts() != 0) {
+			m_val.s64 = evt->get_ts() - ptinfo->get_clone_ts();
 			ASSERT(m_val.s64 > 0);
 			return extract_single_val(m_val.s64, len);
 		}
@@ -1546,17 +1558,17 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		m_val.d = tinfo->get_fd_usage_pct_d();
 		return extract_single_val(m_val.d, len);
 	case TYPE_VMSIZE:
-		m_val.u64 = tinfo->m_vmsize_kb;
-		return extract_single_val(m_val.u64, len);
+		m_val.u64 = tinfo->get_vmsize_kb();
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_VMRSS:
-		m_val.u64 = tinfo->m_vmrss_kb;
-		return extract_single_val(m_val.u64, len);
+		m_val.u64 = tinfo->get_vmrss_kb();
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_VMSWAP:
-		m_val.u64 = tinfo->m_vmswap_kb;
-		return extract_single_val(m_val.u64, len);
+		m_val.u64 = tinfo->get_vmswap_kb();
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_THREAD_VMSIZE:
 		if(tinfo->is_main_thread()) {
-			m_val.u64 = tinfo->m_vmsize_kb;
+			m_val.u64 = tinfo->get_vmsize_kb();
 		} else {
 			m_val.u64 = 0;
 		}
@@ -1564,7 +1576,7 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		return extract_single_val(m_val.u64, len);
 	case TYPE_THREAD_VMRSS:
 		if(tinfo->is_main_thread()) {
-			m_val.u64 = tinfo->m_vmrss_kb;
+			m_val.u64 = tinfo->get_vmrss_kb();
 		} else {
 			m_val.u64 = 0;
 		}
@@ -1572,7 +1584,7 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		return extract_single_val(m_val.u64, len);
 	case TYPE_THREAD_VMSIZE_B:
 		if(tinfo->is_main_thread()) {
-			m_val.u64 = static_cast<uint64_t>(tinfo->m_vmsize_kb) * 1024ULL;
+			m_val.u64 = static_cast<uint64_t>(tinfo->get_vmsize_kb()) * 1024ULL;
 		} else {
 			m_val.u64 = 0;
 		}
@@ -1580,18 +1592,18 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		return extract_single_val(m_val.u64, len);
 	case TYPE_THREAD_VMRSS_B:
 		if(tinfo->is_main_thread()) {
-			m_val.u64 = static_cast<uint64_t>(tinfo->m_vmrss_kb) * 1024ULL;
+			m_val.u64 = static_cast<uint64_t>(tinfo->get_vmrss_kb()) * 1024ULL;
 		} else {
 			m_val.u64 = 0;
 		}
 
 		return extract_single_val(m_val.u64, len);
 	case TYPE_PFMAJOR:
-		m_val.u64 = tinfo->m_pfmajor;
-		return extract_single_val(m_val.u64, len);
+		m_val.u64 = tinfo->get_pfmajor();
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_PFMINOR:
-		m_val.u64 = tinfo->m_pfminor;
-		return extract_single_val(m_val.u64, len);
+		m_val.u64 = tinfo->get_pfminor();
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_CGROUPS: {
 		m_tstr.clear();
 		auto cgroups = tinfo->cgroups();
@@ -1620,19 +1632,19 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		}
 		return NULL;
 	case TYPE_VTID:
-		if(tinfo->m_vtid == -1) {
+		if(tinfo->get_vtid() == -1) {
 			return NULL;
 		}
 
-		m_val.u64 = tinfo->m_vtid;
-		return extract_single_val(m_val.u64, len);
+		m_val.u64 = tinfo->get_vtid();
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_VPID:
-		if(tinfo->m_vpid == -1) {
+		if(tinfo->get_vpid() == -1) {
 			return NULL;
 		}
 
-		m_val.u64 = tinfo->m_vpid;
-		return extract_single_val(m_val.u64, len);
+		m_val.u64 = tinfo->get_vpid();
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_THREAD_CPU: {
 		return extract_thread_cpu(evt, len, tinfo, true, true);
 	}
@@ -1646,98 +1658,106 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		m_tstr = tinfo->get_comm() + to_string(evt->get_tid());
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_IS_EXE_WRITABLE:
-		m_val.u32 = tinfo->m_exe_writable;
-		return extract_single_val(m_val.u32, len);
+		m_val.u32 = tinfo->get_exe_writable();
+		RETURN_EXTRACT_VAR(m_val.u32);
 	case TYPE_IS_EXE_UPPER_LAYER:
-		m_val.u32 = tinfo->m_exe_upper_layer;
-		return extract_single_val(m_val.u32, len);
+		m_val.u32 = tinfo->get_exe_upper_layer();
+		RETURN_EXTRACT_VAR(m_val.u32);
 	case TYPE_IS_EXE_LOWER_LAYER:
-		m_val.u32 = tinfo->m_exe_lower_layer;
-		return extract_single_val(m_val.u32, len);
+		m_val.u32 = tinfo->get_exe_lower_layer();
+		RETURN_EXTRACT_VAR(m_val.u32);
 	case TYPE_IS_EXE_FROM_MEMFD:
-		m_val.u32 = tinfo->m_exe_from_memfd;
-		return extract_single_val(m_val.u32, len);
+		m_val.u32 = tinfo->get_exe_from_memfd();
+		RETURN_EXTRACT_VAR(m_val.u32);
 	case TYPE_IS_SID_LEADER:
-		m_val.u32 = tinfo->m_sid == tinfo->m_vpid;
-		return extract_single_val(m_val.u32, len);
+		m_val.u32 = tinfo->get_sid() == tinfo->get_vpid();
+		RETURN_EXTRACT_VAR(m_val.u32);
 	case TYPE_IS_VPGID_LEADER:
-		m_val.u32 = tinfo->m_vpgid == tinfo->m_vpid;
-		return extract_single_val(m_val.u32, len);
+		m_val.u32 = tinfo->get_vpgid() == tinfo->get_vpid();
+		RETURN_EXTRACT_VAR(m_val.u32);
 	case TYPE_CAP_PERMITTED:
-		m_tstr = sinsp_utils::caps_to_string(tinfo->m_cap_permitted);
-		return extract_single_string(m_tstr, len, sanitize_strings);
+		m_tstr = sinsp_utils::caps_to_string(tinfo->get_cap_permitted());
+		RETURN_EXTRACT_STRING(m_tstr);
 	case TYPE_CAP_INHERITABLE:
-		m_tstr = sinsp_utils::caps_to_string(tinfo->m_cap_inheritable);
-		return extract_single_string(m_tstr, len, sanitize_strings);
+		m_tstr = sinsp_utils::caps_to_string(tinfo->get_cap_inheritable());
+		RETURN_EXTRACT_STRING(m_tstr);
 	case TYPE_CAP_EFFECTIVE:
-		m_tstr = sinsp_utils::caps_to_string(tinfo->m_cap_effective);
-		return extract_single_string(m_tstr, len, sanitize_strings);
+		m_tstr = sinsp_utils::caps_to_string(tinfo->get_cap_effective());
+		RETURN_EXTRACT_STRING(m_tstr);
 	case TYPE_CMDNARGS: {
-		m_val.u64 = (uint32_t)tinfo->m_args.size();
-		return extract_single_val(m_val.u64, len);
+		m_val.u64 = (uint32_t)tinfo->get_args().size();
+		RETURN_EXTRACT_VAR(m_val.u64);
 	}
 	case TYPE_CMDLENARGS: {
 		m_val.u64 = 0;
+		auto args = tinfo->get_args();
 		uint32_t j;
-		uint32_t nargs = (uint32_t)tinfo->m_args.size();
+		uint32_t nargs = (uint32_t)args.size();
 
 		for(j = 0; j < nargs; j++) {
-			m_val.u64 += tinfo->m_args[j].length();
+			m_val.u64 += args[j].length();
 		}
 		return extract_single_val(m_val.u64, len);
 	}
 	case TYPE_PVPID: {
 		sinsp_threadinfo* ptinfo =
-		        m_inspector->m_thread_manager->find_thread(tinfo->m_ptid, true).get();
+		        m_inspector->m_thread_manager->find_thread(tinfo->get_ptid(), true).get();
 
 		if(ptinfo != NULL) {
-			return extract_single_val(ptinfo->m_vpid, len);
+			m_val.s64 = ptinfo->get_vpid();
+			RETURN_EXTRACT_VAR(m_val.s64);
 		} else {
 			return NULL;
 		}
 	}
 	case TYPE_EXE_INO:
-		// Inode 0 is used as a NULL value to indicate that there is no inode.
-		if(tinfo->m_exe_ino == 0) {
+		m_val.s64 = tinfo->get_exe_ino();
+		if(m_val.s64 == 0) {
 			return NULL;
 		}
-		return extract_single_val(tinfo->m_exe_ino, len);
+		RETURN_EXTRACT_VAR(m_val.s64);
 	case TYPE_EXE_INO_CTIME:
-		if(tinfo->m_exe_ino_ctime == 0) {
+		m_val.u64 = tinfo->get_exe_ino_ctime();
+		if(m_val.u64 == 0) {
 			return NULL;
 		}
-		return extract_single_val(tinfo->m_exe_ino_ctime, len);
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_EXE_INO_MTIME:
-		if(tinfo->m_exe_ino_mtime == 0) {
+		m_val.u64 = tinfo->get_exe_ino_mtime();
+		if(m_val.u64 == 0) {
 			return NULL;
 		}
-		return extract_single_val(tinfo->m_exe_ino_mtime, len);
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_EXE_INO_CTIME_DURATION_CLONE_TS:
-		if(tinfo->m_exe_ino_ctime_duration_clone_ts == 0) {
+		m_val.u64 = tinfo->get_exe_ino_ctime_duration_clone_ts();
+		if(m_val.u64 == 0) {
 			return NULL;
 		}
-		return extract_single_val(tinfo->m_exe_ino_ctime_duration_clone_ts, len);
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_EXE_INO_CTIME_DURATION_PIDNS_START:
-		if(tinfo->m_exe_ino_ctime_duration_pidns_start == 0) {
+		m_val.u64 = tinfo->get_exe_ino_ctime_duration_pidns_start();
+		if(m_val.u64 == 0) {
 			return NULL;
 		}
-		return extract_single_val(tinfo->m_exe_ino_ctime_duration_pidns_start, len);
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_PIDNS_INIT_START_TS:
 		if(tinfo->m_pidns_init_start_ts == 0) {
 			return NULL;
 		}
 		return extract_single_val(tinfo->m_pidns_init_start_ts, len);
 	case TYPE_PID_CLONE_TS:
-		if(tinfo->m_clone_ts == 0) {
+		m_val.u64 = tinfo->get_clone_ts();
+		if(m_val.u64 == 0) {
 			return NULL;
 		}
-		return extract_single_val(tinfo->m_clone_ts, len);
+		RETURN_EXTRACT_VAR(m_val.u64);
 	case TYPE_PPID_CLONE_TS: {
 		sinsp_threadinfo* ptinfo =
-		        m_inspector->m_thread_manager->find_thread(tinfo->m_ptid, true).get();
+		        m_inspector->m_thread_manager->find_thread(tinfo->get_ptid(), true).get();
 
 		if(ptinfo != NULL) {
-			return extract_single_val(ptinfo->m_clone_ts, len);
+			m_val.u64 = ptinfo->get_clone_ts();
+			RETURN_EXTRACT_VAR(m_val.u64);
 		} else {
 			return NULL;
 		}
@@ -1787,28 +1807,29 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	}
 	case TYPE_PGID:
-		return extract_single_val(tinfo->m_pgid, len);
+		m_val.s64 = tinfo->get_pgid();
+		RETURN_EXTRACT_VAR(m_val.s64);
 	case TYPE_PGID_NAME:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_pgid; },
+		        [](sinsp_threadinfo* t) { return t->get_pgid(); },
 		        [](sinsp_threadinfo* t) { return t->get_comm(); });
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_PGID_EXE:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_pgid; },
+		        [](sinsp_threadinfo* t) { return t->get_pgid(); },
 		        [](sinsp_threadinfo* t) { return t->get_exe(); });
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_PGID_EXEPATH:
 		m_tstr = m_inspector->m_thread_manager->get_ancestor_field_as_string(
 		        tinfo,
-		        [](sinsp_threadinfo* t) { return t->m_pgid; },
+		        [](sinsp_threadinfo* t) { return t->get_pgid(); },
 		        [](sinsp_threadinfo* t) { return t->get_exepath(); });
 		return extract_single_string(m_tstr, len, sanitize_strings);
 	case TYPE_IS_PGID_LEADER:
-		m_val.u32 = tinfo->m_pgid == tinfo->m_pid;
-		return extract_single_val(m_val.u32, len);
+		m_val.u32 = tinfo->get_pgid() == tinfo->get_pid();
+		RETURN_EXTRACT_VAR(m_val.u32);
 	default:
 		ASSERT(false);
 		return NULL;
@@ -1839,9 +1860,8 @@ bool sinsp_filter_check_thread::compare_full_apid(sinsp_evt* evt) {
 	//
 	bool found = false;
 	sinsp_thread_manager::visitor_func_t visitor = [this, &found](sinsp_threadinfo* pt) {
-		bool res;
-
-		res = compare_rhs(m_cmpop, PT_PID, &pt->m_pid);
+		auto pid = pt->get_pid();
+		bool res = compare_rhs(m_cmpop, PT_PID, &pid);
 
 		if(res == true) {
 			found = true;
@@ -1882,9 +1902,8 @@ bool sinsp_filter_check_thread::compare_full_aname(sinsp_evt* evt) {
 	//
 	bool found = false;
 	sinsp_thread_manager::visitor_func_t visitor = [this, &found](sinsp_threadinfo* pt) {
-		bool res;
-
-		res = compare_rhs(m_cmpop, PT_CHARBUF, (void*)pt->m_comm.c_str());
+		auto comm = pt->get_comm();
+		bool res = compare_rhs(m_cmpop, PT_CHARBUF, (void*)comm.c_str());
 
 		if(res == true) {
 			found = true;
@@ -1925,9 +1944,8 @@ bool sinsp_filter_check_thread::compare_full_aexe(sinsp_evt* evt) {
 	//
 	bool found = false;
 	sinsp_thread_manager::visitor_func_t visitor = [this, &found](sinsp_threadinfo* pt) {
-		bool res;
-
-		res = compare_rhs(m_cmpop, PT_CHARBUF, (void*)pt->m_exe.c_str());
+		auto exe = pt->get_exe();
+		bool res = compare_rhs(m_cmpop, PT_CHARBUF, (void*)exe.c_str());
 
 		if(res == true) {
 			found = true;
@@ -1968,9 +1986,8 @@ bool sinsp_filter_check_thread::compare_full_aexepath(sinsp_evt* evt) {
 	//
 	bool found = false;
 	sinsp_thread_manager::visitor_func_t visitor = [this, &found](sinsp_threadinfo* pt) {
-		bool res;
-
-		res = compare_rhs(m_cmpop, PT_CHARBUF, (void*)pt->m_exepath.c_str());
+		auto exepath = pt->get_exepath();
+		bool res = compare_rhs(m_cmpop, PT_CHARBUF, (void*)exepath.c_str());
 
 		if(res == true) {
 			found = true;

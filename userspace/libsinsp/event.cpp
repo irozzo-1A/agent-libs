@@ -128,7 +128,7 @@ sinsp_threadinfo *sinsp_evt::get_thread_info() {
 
 int64_t sinsp_evt::get_fd_num() const {
 	if(m_fdinfo) {
-		return m_tinfo->m_lastevent_fd;
+		return m_tinfo->get_lastevent_fd();
 	} else {
 		return sinsp_evt::INVALID_FD_NUM;
 	}
@@ -834,8 +834,8 @@ const char *sinsp_evt::get_param_as_str(uint32_t id, const char **resolved_str, 
 
 		sinsp_threadinfo *atinfo =
 		        m_inspector->m_thread_manager->find_thread(param->as<int64_t>(), true).get();
-		if(atinfo != nullptr) {
-			std::string &tcomm = atinfo->m_comm;
+		if(atinfo != NULL) {
+			std::string tcomm = atinfo->get_comm();
 
 			//
 			// Make sure the string will fit
@@ -1734,7 +1734,7 @@ bool sinsp_evt::is_network_error() const {
 }
 
 uint64_t sinsp_evt::get_lastevent_ts() const {
-	return m_tinfo->m_lastevent_ts;
+	return m_tinfo->get_lastevent_ts();
 }
 
 void sinsp_evt_param::throw_invalid_len_error(const size_t requested_len) const {

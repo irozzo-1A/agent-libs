@@ -21,6 +21,7 @@ limitations under the License.
 #include <libsinsp/sinsp_int.h>
 #include <libsinsp/dns_manager.h>
 #include <libsinsp/filter_cache.h>
+#include <libsinsp/atomic_helpers.h>
 
 using namespace std;
 
@@ -483,7 +484,9 @@ uint8_t *sinsp_filter_check_fd::extract_single(sinsp_evt *evt,
 	// TYPE_FDNUM doesn't need fdinfo
 	//
 	if(m_field_id == TYPE_FDNUM) {
-		return extract_single_val(m_tinfo->m_lastevent_fd, len);
+		m_val.u64 = static_cast<uint64_t>(m_tinfo->get_lastevent_fd());
+		*len = sizeof(int64_t);
+		return (uint8_t *)&m_val.u64;
 	}
 
 	std::string container_id;
@@ -1135,8 +1138,8 @@ uint8_t *sinsp_filter_check_fd::extract_single(sinsp_evt *evt,
 			return NULL;
 		}
 
-		m_tstr = to_string(m_tinfo->m_tid) + to_string(m_tinfo->m_lastevent_fd);
-		return extract_single_string(m_tstr, len, sanitize_strings);
+		m_tstr = to_string(m_tinfo->m_tid) + to_string(m_tinfo->get_lastevent_fd());
+		RETURN_EXTRACT_STRING(m_tstr);
 	} break;
 	case TYPE_IS_CONNECTED: {
 		if(m_fdinfo == NULL) {
@@ -1582,8 +1585,9 @@ bool sinsp_filter_check_fd::extract_fd(sinsp_evt *evt) {
 		} else {
 			m_fdinfo = evt->get_fd_info();
 
-			if(m_fdinfo == NULL && m_tinfo->m_lastevent_fd != -1) {
-				m_fdinfo = m_tinfo->get_fd(m_tinfo->m_lastevent_fd);
+			auto cached_fd = m_tinfo->get_lastevent_fd();
+			if(m_fdinfo == NULL && cached_fd != -1) {
+				m_fdinfo = m_tinfo->get_fd(cached_fd);
 			}
 		}
 		// We'll check if fd is null below

@@ -580,7 +580,6 @@ public:
 		m_flags = EF_NONE;
 		m_info = &m_event_info_table[m_pevt->type];
 		m_tinfo_ref.reset();
-		m_tinfo = nullptr;
 		m_fdinfo_ref.reset();
 		m_fdinfo_name_changed = false;
 		m_iosize = 0;
@@ -592,7 +591,6 @@ public:
 		m_pevt = reinterpret_cast<scap_evt*>(evdata);
 		m_info = &m_event_info_table[m_pevt->type];
 		m_tinfo_ref.reset();
-		m_tinfo = nullptr;
 		m_fdinfo_ref.reset();
 		m_fdinfo_name_changed = false;
 		m_iosize = 0;
@@ -655,11 +653,13 @@ public:
 
 	void set_tinfo_ref(const std::shared_ptr<sinsp_threadinfo>& v) { m_tinfo_ref = v; }
 
-	const sinsp_threadinfo* get_tinfo() const { return m_tinfo; }
+	inline const sinsp_threadinfo* get_tinfo() const { return m_tinfo_ref.get(); }
 
-	sinsp_threadinfo* get_tinfo() { return m_tinfo; }
+	inline sinsp_threadinfo* get_tinfo() { return m_tinfo_ref.get(); }
 
-	void set_tinfo(sinsp_threadinfo* v) { m_tinfo = v; }
+	inline void set_tinfo(std::shared_ptr<sinsp_threadinfo> v) { m_tinfo_ref = std::move(v); }
+
+	inline void set_tinfo(std::nullptr_t) { m_tinfo_ref.reset(); }
 
 	std::shared_ptr<const sinsp_fdinfo> get_fdinfo_ref() const { return m_fdinfo_ref; }
 
@@ -785,7 +785,6 @@ private:
 	// reference to keep threadinfo alive. currently only used for synthetic container event thread
 	// info it should either be null, or point to the same place as m_tinfo
 	std::shared_ptr<sinsp_threadinfo> m_tinfo_ref;
-	sinsp_threadinfo* m_tinfo;
 
 	// If true, then the associated fdinfo changed names as a part
 	// of parsing this event.

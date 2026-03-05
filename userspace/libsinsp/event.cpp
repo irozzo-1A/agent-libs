@@ -559,9 +559,12 @@ int sinsp_evt::render_fd_json(Json::Value *ret,
 			const auto tch = fdinfo->get_typechar();
 			char ipprotoch = 0;
 
-			if(fdinfo->m_type == SCAP_FD_IPV4_SOCK || fdinfo->m_type == SCAP_FD_IPV6_SOCK ||
-			   fdinfo->m_type == SCAP_FD_IPV4_SERVSOCK || fdinfo->m_type == SCAP_FD_IPV6_SERVSOCK) {
-				switch(fdinfo->get_l4proto()) {
+			auto ftype = fdinfo->get_type();
+			if(ftype == SCAP_FD_IPV4_SOCK || ftype == SCAP_FD_IPV6_SOCK ||
+			   ftype == SCAP_FD_IPV4_SERVSOCK || ftype == SCAP_FD_IPV6_SERVSOCK) {
+				scap_l4_proto l4p = fdinfo->get_l4proto();
+
+				switch(l4p) {
 				case SCAP_L4_TCP:
 					ipprotoch = 't';
 					break;
@@ -584,8 +587,9 @@ int sinsp_evt::render_fd_json(Json::Value *ret,
 			//
 			// Make sure we remove invalid characters from the resolved name
 			//
-			std::string sanitized_name_storage;
-			const auto sanitized_name = sanitize_string(fdinfo->m_name, sanitized_name_storage);
+			std::string sanitized_str = fdinfo->get_name();
+
+			sanitize_string(sanitized_str);
 
 			(*ret)["typechar"] = typestr;
 			(*ret)["name"] = sanitized_name.data();
@@ -628,9 +632,12 @@ char *sinsp_evt::render_fd(const int64_t fd, const char ** /*resolved_str*/, con
 			const auto tch = fdinfo->get_typechar();
 			char ipprotoch = 0;
 
-			if(fdinfo->m_type == SCAP_FD_IPV4_SOCK || fdinfo->m_type == SCAP_FD_IPV6_SOCK ||
-			   fdinfo->m_type == SCAP_FD_IPV4_SERVSOCK || fdinfo->m_type == SCAP_FD_IPV6_SERVSOCK) {
-				switch(fdinfo->get_l4proto()) {
+			auto ftype = fdinfo->get_type();
+			if(ftype == SCAP_FD_IPV4_SOCK || ftype == SCAP_FD_IPV6_SOCK ||
+			   ftype == SCAP_FD_IPV4_SERVSOCK || ftype == SCAP_FD_IPV6_SERVSOCK) {
+				scap_l4_proto l4p = fdinfo->get_l4proto();
+
+				switch(l4p) {
 				case SCAP_L4_TCP:
 					ipprotoch = 't';
 					break;
@@ -653,8 +660,9 @@ char *sinsp_evt::render_fd(const int64_t fd, const char ** /*resolved_str*/, con
 			//
 			// Make sure we remove invalid characters from the resolved name
 			//
-			std::string sanitized_name_storage;
-			const auto sanitized_name = sanitize_string(fdinfo->m_name, sanitized_name_storage);
+			std::string sanitized_str = fdinfo->get_name();
+
+			sanitize_string(sanitized_str);
 
 			//
 			// Make sure the string will fit
@@ -1630,45 +1638,46 @@ void sinsp_evt::get_category(category *cat) const {
 			//
 			cat->m_subcategory = SC_UNKNOWN;
 			return;
-		}
-		switch(m_fdinfo->m_type) {
-		case SCAP_FD_FILE:
-		case SCAP_FD_FILE_V2:
-		case SCAP_FD_DIRECTORY:
-			cat->m_subcategory = SC_FILE;
-			break;
-		case SCAP_FD_IPV4_SOCK:
-		case SCAP_FD_IPV6_SOCK:
-			cat->m_subcategory = SC_NET;
-			break;
-		case SCAP_FD_IPV4_SERVSOCK:
-		case SCAP_FD_IPV6_SERVSOCK:
-			cat->m_subcategory = SC_NET;
-			break;
-		case SCAP_FD_FIFO:
-		case SCAP_FD_UNIX_SOCK:
-		case SCAP_FD_EVENT:
-		case SCAP_FD_SIGNALFD:
-		case SCAP_FD_INOTIFY:
-		case SCAP_FD_USERFAULTFD:
-			cat->m_subcategory = SC_IPC;
-			break;
-		case SCAP_FD_UNSUPPORTED:
-		case SCAP_FD_EVENTPOLL:
-		case SCAP_FD_TIMERFD:
-		case SCAP_FD_BPF:
-		case SCAP_FD_IOURING:
-		case SCAP_FD_NETLINK:
-		case SCAP_FD_MEMFD:
-		case SCAP_FD_PIDFD:
-			cat->m_subcategory = SC_OTHER;
-			break;
-		case SCAP_FD_UNKNOWN:
-			cat->m_subcategory = SC_OTHER;
-			break;
-		default:
-			cat->m_subcategory = SC_UNKNOWN;
-			break;
+		} else {
+			switch(m_fdinfo->get_type()) {
+			case SCAP_FD_FILE:
+			case SCAP_FD_FILE_V2:
+			case SCAP_FD_DIRECTORY:
+				cat->m_subcategory = SC_FILE;
+				break;
+			case SCAP_FD_IPV4_SOCK:
+			case SCAP_FD_IPV6_SOCK:
+				cat->m_subcategory = SC_NET;
+				break;
+			case SCAP_FD_IPV4_SERVSOCK:
+			case SCAP_FD_IPV6_SERVSOCK:
+				cat->m_subcategory = SC_NET;
+				break;
+			case SCAP_FD_FIFO:
+			case SCAP_FD_UNIX_SOCK:
+			case SCAP_FD_EVENT:
+			case SCAP_FD_SIGNALFD:
+			case SCAP_FD_INOTIFY:
+			case SCAP_FD_USERFAULTFD:
+				cat->m_subcategory = SC_IPC;
+				break;
+			case SCAP_FD_UNSUPPORTED:
+			case SCAP_FD_EVENTPOLL:
+			case SCAP_FD_TIMERFD:
+			case SCAP_FD_BPF:
+			case SCAP_FD_IOURING:
+			case SCAP_FD_NETLINK:
+			case SCAP_FD_MEMFD:
+			case SCAP_FD_PIDFD:
+				cat->m_subcategory = SC_OTHER;
+				break;
+			case SCAP_FD_UNKNOWN:
+				cat->m_subcategory = SC_OTHER;
+				break;
+			default:
+				cat->m_subcategory = SC_UNKNOWN;
+				break;
+			}
 		}
 	} else {
 		cat->m_subcategory = SC_NONE;
@@ -1721,13 +1730,15 @@ bool sinsp_evt::is_file_open_error() const {
 }
 
 bool sinsp_evt::is_file_error() const {
-	return is_file_open_error() || (m_fdinfo != nullptr && (m_fdinfo->m_type == SCAP_FD_FILE ||
-	                                                        m_fdinfo->m_type == SCAP_FD_FILE_V2));
+	return is_file_open_error() ||
+	       ((m_fdinfo != nullptr) &&
+	        ((m_fdinfo->get_type() == SCAP_FD_FILE) || (m_fdinfo->get_type() == SCAP_FD_FILE_V2)));
 }
 
 bool sinsp_evt::is_network_error() const {
 	if(m_fdinfo != nullptr) {
-		return m_fdinfo->m_type == SCAP_FD_IPV4_SOCK || m_fdinfo->m_type == SCAP_FD_IPV6_SOCK;
+		auto ftype = m_fdinfo->get_type();
+		return ftype == SCAP_FD_IPV4_SOCK || ftype == SCAP_FD_IPV6_SOCK;
 	}
 	return m_pevt->type == PPME_SOCKET_ACCEPT_5_X || m_pevt->type == PPME_SOCKET_ACCEPT4_6_X ||
 	       m_pevt->type == PPME_SOCKET_CONNECT_X || m_pevt->type == PPME_SOCKET_BIND_X;

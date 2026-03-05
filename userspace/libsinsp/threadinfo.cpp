@@ -1045,15 +1045,27 @@ void sinsp_threadinfo::populate_args(std::string& args, const sinsp_threadinfo* 
 }
 
 std::string sinsp_threadinfo::get_path_for_dir_fd(int64_t dir_fd) {
-	if(const auto* dir_fdinfo = get_fd(dir_fd); dir_fdinfo && !dir_fdinfo->m_name.empty()) {
-		const auto& name = dir_fdinfo->m_name;
-		if(name.back() == '/') {
-			std::string sanitized_name_storage;
-			const auto sanitized_name = sanitize_string(name, sanitized_name_storage);
-			if(sanitized_name.data() == name.data()) {
-				return name;
-			}
-			return sanitized_name_storage;
+	sinsp_fdinfo* dir_fdinfo = get_fd(dir_fd);
+	auto dir_name = dir_fdinfo ? dir_fdinfo->get_name() : std::string{};
+	if(!dir_fdinfo || dir_name.empty()) {
+#ifndef _WIN32  // we will have to implement this for Windows
+		// Sad day; we don't have the directory in the tinfo's fd cache.
+		// Must manually look it up so we can resolve filenames correctly.
+		char proc_path[PATH_MAX];
+		char dirfd_path[PATH_MAX];
+		int ret;
+		snprintf(proc_path,
+		         sizeof(proc_path),
+		         "%s/proc/%lld/fd/%lld",
+		         scap_get_host_root(),
+		         (long long)m_pid,
+		         (long long)dir_fd);
+
+		ret = readlink(proc_path, dirfd_path, sizeof(dirfd_path) - 1);
+		if(ret < 0) {
+			libsinsp_logger()->log("Unable to determine path for file descriptor.",
+			                       sinsp_logger::SEV_INFO);
+			return "";
 		}
 
 		// We need to copy the name as we must append '/'.
@@ -1068,42 +1080,7 @@ std::string sinsp_threadinfo::get_path_for_dir_fd(int64_t dir_fd) {
 		}
 		return sanitized_name_storage;
 	}
-
-	// Sad day; we don't have the directory in the tinfo's fd cache.
-	// Must manually look it up so we can resolve filenames correctly.
-#ifdef _WIN32
-	return "";  // We will have to implement this for Windows.
-#else
-	char proc_path[PATH_MAX];
-	char dirfd_path[PATH_MAX + 1];  // +1 accounts for trailing '/' that will be added.
-	snprintf(proc_path,
-	         sizeof(proc_path),
-	         "%s/proc/%lld/fd/%lld",
-	         scap_get_host_root(),
-	         (long long)m_pid,
-	         (long long)dir_fd);
-
-	// Read up to `sizeof(dirfd_path) - 2` to leave room for '/' and '\0'.
-	const ssize_t bytes_read = readlink(proc_path, dirfd_path, sizeof(dirfd_path) - 2);
-	if(bytes_read < 0) {
-		libsinsp_logger()->log("Unable to determine path for file descriptor.",
-		                       sinsp_logger::SEV_INFO);
-		return "";
-	}
-	dirfd_path[bytes_read] = '/';
-	dirfd_path[bytes_read + 1] = '\0';
-
-	// Sanitize the path.
-	const auto path_len = static_cast<size_t>(bytes_read + 1);  // +1 account for trailing '/'
-	std::string sanitized_path_storage;
-	const auto sanitized_path =
-	        sanitize_string(std::string_view{dirfd_path, path_len}, sanitized_path_storage);
-	libsinsp_logger()->log(std::string("Translating to ") + sanitized_path.data());
-	if(sanitized_path.data() == dirfd_path) {
-		return dirfd_path;
-	}
-	return sanitized_path_storage;
-#endif /* _WIN32 */
+	return dir_name;
 }
 
 size_t sinsp_threadinfo::args_len() const {

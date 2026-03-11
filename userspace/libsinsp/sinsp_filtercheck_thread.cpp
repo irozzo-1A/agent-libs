@@ -1342,7 +1342,7 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 	case TYPE_ACMDLINE: {
 		if(m_argid == -1) {
 			m_tstr.clear();
-			sinsp_threadinfo* mt = tinfo->get_main_thread();
+			auto mt = tinfo->get_main_thread();
 			if(!mt) {
 				return NULL;
 			}
@@ -1385,7 +1385,7 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 	case TYPE_ANAME: {
 		if(m_argid == -1) {
 			m_tstr.clear();
-			sinsp_threadinfo* mt = tinfo->get_main_thread();
+			auto mt = tinfo->get_main_thread();
 			if(!mt) {
 				return NULL;
 			}
@@ -1422,7 +1422,7 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 	case TYPE_AEXE: {
 		if(m_argid == -1) {
 			m_tstr.clear();
-			sinsp_threadinfo* mt = tinfo->get_main_thread();
+			auto mt = tinfo->get_main_thread();
 			if(!mt) {
 				return NULL;
 			}
@@ -1459,7 +1459,7 @@ uint8_t* sinsp_filter_check_thread::extract_single(sinsp_evt* evt,
 	case TYPE_AEXEPATH: {
 		if(m_argid == -1) {
 			m_tstr.clear();
-			sinsp_threadinfo* mt = tinfo->get_main_thread();
+			auto mt = tinfo->get_main_thread();
 			if(!mt) {
 				return NULL;
 			}

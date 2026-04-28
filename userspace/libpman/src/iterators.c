@@ -16,6 +16,16 @@ limitations under the License.
 
 */
 
+#define _GNU_SOURCE
+#include <unistd.h>
+#include <sys/syscall.h>
+#if !defined(__GLIBC_PREREQ) || !__GLIBC_PREREQ(2, 30)
+static inline pid_t compat_gettid(void) {
+	return (pid_t)syscall(SYS_gettid);
+}
+#define gettid compat_gettid
+#endif
+
 #include <driver/ppm_events_public.h>
 #include <driver/ppm_param_helpers.h>
 #include <libpman.h>
@@ -759,6 +769,7 @@ static int32_t fetch(const struct prog_info *prog_info,
 	errno = 0;
 	int32_t res = SCAP_SUCCESS;
 	int iter_fd = -1;
+
 
 	// Attach the program.
 	LIBBPF_OPTS(bpf_iter_attach_opts, opts);

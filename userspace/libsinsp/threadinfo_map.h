@@ -125,6 +125,7 @@ protected:
 	                                    std_map_t>;
 
 	map_type m_threads;
+	bool m_last_lookup_cached{false};
 };
 
 using threadinfo_map_t = threadinfo_map_impl_t<>;

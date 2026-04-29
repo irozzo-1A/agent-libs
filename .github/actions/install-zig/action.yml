@@ -1,13 +1,9 @@
 name: 'install-zig'
-description: 'Install zig compiler and set ZIG/ZIG_TARGET env vars for use with cmake/toolchains/zig.cmake.'
+description: 'Install zig compiler and set ZIG/ZIG_TARGET/ZIG_TOOLCHAIN_FILE env vars. The zig.cmake toolchain file is bundled with this action.'
 
 inputs:
   target:
     description: 'Zig target triple (default: <host-arch>-linux-gnu.2.17)'
-    required: false
-    default: ''
-  toolchain_file:
-    description: 'Absolute path to the zig.cmake toolchain file. If empty, defaults to cmake/toolchains/zig.cmake inside the libs source tree that contains this action.'
     required: false
     default: ''
   zig_download_retries:
@@ -45,10 +41,10 @@ runs:
         else
           echo "ZIG_TARGET=$(uname -m)-linux-gnu.2.17" >> $GITHUB_ENV
         fi
-        if [ -n "${{ inputs.toolchain_file }}" ]; then
-          TOOLCHAIN="${{ inputs.toolchain_file }}"
+        ACTION_DIR="${{ github.action_path }}"
+        if [ -f "${ACTION_DIR}/zig.cmake" ]; then
+          cp "${ACTION_DIR}/zig.cmake" "${ZIG_DIR}/zig.cmake"
         else
-          LIBS_ROOT="$(cd "${{ github.action_path }}/../../.." && pwd)"
-          TOOLCHAIN="${LIBS_ROOT}/cmake/toolchains/zig.cmake"
+          cp "${GITHUB_WORKSPACE}/.github/actions/install-zig/zig.cmake" "${ZIG_DIR}/zig.cmake"
         fi
-        echo "ZIG_TOOLCHAIN_FILE=${TOOLCHAIN}" >> $GITHUB_ENV
+        echo "ZIG_TOOLCHAIN_FILE=${ZIG_DIR}/zig.cmake" >> $GITHUB_ENV

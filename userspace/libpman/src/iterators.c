@@ -19,8 +19,10 @@ limitations under the License.
 #define _GNU_SOURCE
 #include <unistd.h>
 #include <sys/syscall.h>
-#if defined(__GLIBC_PREREQ) && __GLIBC_PREREQ(2, 30)
+#if defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2, 30)
 #define HAS_GETTID 1
+#endif
 #endif
 #ifndef HAS_GETTID
 static inline pid_t compat_gettid(void) {

@@ -441,6 +441,12 @@ void sinsp_thread_manager_impl<SyncPolicy>::remove_main_thread_fdtable(
 }
 
 template<typename SyncPolicy>
+void sinsp_thread_manager_impl<SyncPolicy>::remove_thread_locked(int64_t tid) {
+	std::unique_lock lock(m_remove_thread_mutex);
+	remove_thread(tid);
+}
+
+template<typename SyncPolicy>
 void sinsp_thread_manager_impl<SyncPolicy>::remove_thread(int64_t tid) {
 	auto thread_to_remove_ref = m_threadtable.get_ref(tid);
 	if(!thread_to_remove_ref) {
@@ -1181,8 +1187,11 @@ bool sinsp_thread_manager_impl<SyncPolicy>::remove_inactive_threads() {
 		return true;
 	});
 
-	for(const auto& tid_to_remove : to_delete) {
-		remove_thread(tid_to_remove);
+	{
+		std::unique_lock lock(m_remove_thread_mutex);
+		for(const auto& tid_to_remove : to_delete) {
+			remove_thread(tid_to_remove);
+		}
 	}
 
 	// Clean expired threads in the group and children.

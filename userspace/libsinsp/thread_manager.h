@@ -81,6 +81,7 @@ public:
 	typename threadinfo_map_impl_t<SyncPolicy>::ptr_t find_new_reaper(
 	        sinsp_threadinfo_impl<SyncPolicy>* tinfo);
 	void remove_thread(int64_t tid);
+	void remove_thread_locked(int64_t tid);
 
 	/*!
 	  \brief Record a TID that was removed due to a procexit event.
@@ -275,7 +276,7 @@ public:
 		// todo(jasondellaluce): should we make m_tid_to_remove a list, in case
 		// we have more than one thread removed in a given event loop iteration?
 		if(m_threadtable.get_ref(key)) {
-			this->remove_thread(key);
+			this->remove_thread_locked(key);
 			return true;
 		}
 		return false;
@@ -356,6 +357,7 @@ private:
 
 	std::unordered_map<int64_t, std::shared_ptr<thread_group_info>> m_thread_groups;
 	mutable typename traits::shared_mutex m_thread_groups_mutex;
+	typename traits::mutex m_remove_thread_mutex;
 	threadinfo_map_impl_t<SyncPolicy> m_threadtable;
 	std::atomic<uint64_t> m_last_flush_time_ns{0};
 	// Increased legacy default of 131072 in January 2024 to prevent

@@ -781,7 +781,7 @@ void sinsp_parser::parse_clone_exit_caller(sinsp_evt &evt,
 		if(existing_child->get_flags() & PPM_CL_CLONE_INVERTED) {
 			return;
 		} else {
-			m_params->m_thread_manager->remove_thread(child_tid);
+			m_params->m_thread_manager->remove_thread_locked(child_tid);
 			tid_collision = child_tid;
 		}
 	}
@@ -1065,7 +1065,7 @@ void sinsp_parser::parse_clone_exit_child(sinsp_evt &evt, sinsp_parser_verdict &
 		}
 
 		/* The info is too old, we remove it and create a new one */
-		m_params->m_thread_manager->remove_thread(child_tid);
+		m_params->m_thread_manager->remove_thread_locked(child_tid);
 		tid_collision = child_tid;
 		evt.set_tinfo(nullptr);
 	}
@@ -1805,7 +1805,7 @@ void sinsp_parser::parse_execve_exit(sinsp_evt &evt, sinsp_parser_verdict &verdi
 			tids_to_remove.push_back(thread_ptr->m_tid);
 		}
 		for(int64_t tid : tids_to_remove) {
-			m_params->m_thread_manager->remove_thread(tid);
+			m_params->m_thread_manager->remove_thread_locked(tid);
 		}
 	}
 }

@@ -1466,7 +1466,7 @@ int32_t sinsp::next(sinsp_evt** puevt, const sinsp_buffer_t buffer_h) {
 				ptid = tinfo_ptr->get_ptid();
 			}
 			m_thread_manager->record_recently_exited(tid, ptid, ts);
-			m_thread_manager->remove_thread_locked(tid);
+			m_thread_manager->remove_thread(tid);
 			buffer.m_parser_verdict.clear_tid_to_remove();
 		}
 		if(is_default_buffer && !is_offline()) {

@@ -120,7 +120,7 @@ TEST_F(sinsp_with_test_input, THRD_MANAGER_concurrent_add_lookup_iterate_remove)
 		});
 		std::thread remover([&]() {
 			for(int i = 0; i < num_adds; ++i) {
-				manager->remove_thread_locked(tid_start + round * 1000 + i);
+				manager->remove_thread(tid_start + round * 1000 + i);
 			}
 			phase2_done.store(true);
 		});
@@ -182,7 +182,7 @@ TEST_F(sinsp_with_test_input, THRD_MANAGER_concurrent_thread_groups) {
 			for(int p = 0; p < num_procs; ++p) {
 				const int64_t pid = pid_base + p + round_off;
 				for(int t = 0; t < threads_per_proc; ++t) {
-					manager->remove_thread_locked(pid * 10 + t);
+					manager->remove_thread(pid * 10 + t);
 				}
 			}
 			stop.store(true);

@@ -45,6 +45,8 @@ limitations under the License.
 #include <WinSock2.h>
 #include "Shlwapi.h"
 #pragma comment(lib, "shlwapi.lib")
+#define gmtime_r(timep, result) (gmtime_s(result, timep) == 0 ? (result) : nullptr)
+#define localtime_r(timep, result) (localtime_s(result, timep) == 0 ? (result) : nullptr)
 #endif
 
 #include <algorithm>

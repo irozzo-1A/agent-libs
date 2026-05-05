@@ -144,13 +144,15 @@ set(SINSP_PKGCONFIG_REQUIRES_PRIVATE re2)
 if(NOT EMSCRIPTEN)
 	target_link_libraries(sinsp PRIVATE "${TBB_LIB}")
 	list(APPEND SINSP_PKGCONFIG_REQUIRES_PRIVATE tbb)
-	# Folly ConcurrentHashMap for thread-safe thread manager (see
-	# proposals/20260212-thread-safe-thread-manager.md and cmake/modules/folly.cmake)
-	target_link_libraries(sinsp PUBLIC folly_minimal)
-	target_compile_definitions(sinsp PUBLIC LIBSINSP_USE_FOLLY)
-	# Suppress sign-compare warnings from glog when used inside Folly templates
-	if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-		target_compile_options(sinsp PRIVATE -Wno-sign-compare)
+	if(NOT WIN32)
+		# Folly ConcurrentHashMap for thread-safe thread manager (see
+		# proposals/20260212-thread-safe-thread-manager.md and cmake/modules/folly.cmake)
+		target_link_libraries(sinsp PUBLIC folly_minimal)
+		target_compile_definitions(sinsp PUBLIC LIBSINSP_USE_FOLLY)
+		# Suppress sign-compare warnings from glog when used inside Folly templates
+		if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+			target_compile_options(sinsp PRIVATE -Wno-sign-compare)
+		endif()
 	endif()
 endif()
 

@@ -225,8 +225,8 @@ std::string sinsp_fdinfo_impl<SyncPolicy>::tostring_clean() const {
 	std::shared_lock l(m_mutex.m);
 	std::string tstr = m_name;
 	l.unlock();
-	sanitize_string(tstr);
-	return tstr;
+	std::string storage;
+	return std::string(sanitize_string(tstr, storage));
 }
 
 template<typename SyncPolicy>

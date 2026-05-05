@@ -1150,11 +1150,11 @@ std::string sinsp_threadinfo_impl<SyncPolicy>::get_path_for_dir_fd(int64_t dir_f
 			                       sinsp_logger::SEV_INFO);
 			return "";
 		}
+		dirfd_path[ret] = '\0';
 
-		// We need to copy the name as we must append '/'.
 		std::string copied_name;
-		copied_name.reserve(name.size() + 1);  // +1 accounts for the trailing '/'.
-		copied_name.append(name);
+		copied_name.reserve(ret + 1);
+		copied_name.append(dirfd_path);
 		copied_name.append("/");
 		std::string sanitized_name_storage;
 		const auto sanitized_name = sanitize_string(copied_name, sanitized_name_storage);
@@ -1162,6 +1162,7 @@ std::string sinsp_threadinfo_impl<SyncPolicy>::get_path_for_dir_fd(int64_t dir_f
 			return copied_name;
 		}
 		return sanitized_name_storage;
+#endif
 	}
 	return dir_name;
 }

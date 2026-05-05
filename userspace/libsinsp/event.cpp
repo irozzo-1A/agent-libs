@@ -584,9 +584,8 @@ int sinsp_evt::render_fd_json(Json::Value *ret,
 			//
 			// Make sure we remove invalid characters from the resolved name
 			//
-			std::string sanitized_str = fdinfo->get_name();
-
-			sanitize_string(sanitized_str);
+			std::string sanitized_storage;
+			const auto sanitized_name = sanitize_string(fdinfo->get_name(), sanitized_storage);
 
 			(*ret)["typechar"] = typestr;
 			(*ret)["name"] = sanitized_name.data();
@@ -658,9 +657,8 @@ char *sinsp_evt::render_fd(const int64_t fd, const char ** /*resolved_str*/, con
 			//
 			// Make sure we remove invalid characters from the resolved name
 			//
-			std::string sanitized_str = fdinfo->get_name();
-
-			sanitize_string(sanitized_str);
+			std::string sanitized_storage;
+			const auto sanitized_name = sanitize_string(fdinfo->get_name(), sanitized_storage);
 
 			//
 			// Make sure the string will fit
@@ -1371,9 +1369,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id, const char **resolved_str, 
 				        val,
 				        [this](const scap_userinfo &user_info) {
 					        if(user_info.name[0] != 0) {
-						        strcpy_sanitized(&m_resolved_paramstr_storage[0],
-						                         user_info.name,
-						                         (uint32_t)m_resolved_paramstr_storage.size());
+						        strcpy_sanitized(m_resolved_paramstr_storage, user_info.name);
 					        } else {
 						        snprintf(&m_resolved_paramstr_storage[0],
 						                 m_resolved_paramstr_storage.size(),
@@ -1409,9 +1405,7 @@ const char *sinsp_evt::get_param_as_str(uint32_t id, const char **resolved_str, 
 				        val,
 				        [this](const scap_groupinfo &group_info) {
 					        if(group_info.name[0] != 0) {
-						        strcpy_sanitized(&m_resolved_paramstr_storage[0],
-						                         group_info.name,
-						                         (uint32_t)m_resolved_paramstr_storage.size());
+						        strcpy_sanitized(m_resolved_paramstr_storage, group_info.name);
 					        } else {
 						        snprintf(&m_resolved_paramstr_storage[0],
 						                 m_resolved_paramstr_storage.size(),

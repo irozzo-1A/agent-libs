@@ -46,6 +46,19 @@ void scap_clear_thread_lasterr(void);
 /** Return thread-local error buffer if set, otherwise NULL. */
 const char* scap_get_thread_lasterr(void);
 
+static inline int32_t scap_err_opnotsup(char* error) {
+	(void)scap_errprintf(error, 0, "operation not supported");
+	return SCAP_NOT_SUPPORTED;
+}
+
+static inline int32_t scap_err_unsupported_setting(char* lasterr,
+                                                   int setting,
+                                                   unsigned long arg1,
+                                                   unsigned long arg2) {
+	(void)scap_errprintf(lasterr, 0, "Unsupported setting %d (args %lu, %lu)", setting, arg1, arg2);
+	return SCAP_NOT_SUPPORTED;
+}
+
 #ifdef __cplusplus
 };
 #endif

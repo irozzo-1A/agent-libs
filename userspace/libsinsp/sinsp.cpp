@@ -1538,7 +1538,7 @@ int32_t sinsp::next(sinsp_evt** puevt, const sinsp_buffer_t buffer_h) {
 		m_external_event_processor->process_event(evt, libsinsp::EVENT_RETURN_NONE);
 	}
 
-	sinsp_parser::event_cleanup(*evt);
+	buffer.m_parser->event_cleanup(*evt);
 
 	if(evt->get_tinfo() && evt->get_type() != PPME_SCHEDSWITCH_6_E) {
 		evt->get_tinfo()->set_prevevent_ts(evt->get_tinfo()->get_lastevent_ts());

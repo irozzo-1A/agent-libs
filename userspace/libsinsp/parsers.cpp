@@ -279,12 +279,11 @@ void sinsp_parser::process_event(sinsp_evt &evt, sinsp_parser_verdict &verdict) 
 }
 
 void sinsp_parser::event_cleanup(sinsp_evt &evt) {
-	if(evt.get_direction() == SCAP_ED_OUT && evt.get_tinfo() &&
-	   evt.get_tinfo()->get_last_event_data()) {
-		uint8_t *ptr = evt.get_tinfo()->get_last_event_data();
-		free(ptr);
-		evt.get_tinfo()->set_last_event_data(nullptr);
-		evt.get_tinfo()->set_lastevent_data_validity(false);
+	if(evt.get_direction() == SCAP_ED_OUT && evt.get_tinfo()) {
+		auto it = m_lastevent_by_tid.find(evt.get_tinfo()->m_tid);
+		if(it != m_lastevent_by_tid.end() && it->second.data != nullptr) {
+			it->second.clear();
+		}
 	}
 }
 
@@ -424,6 +423,11 @@ bool sinsp_parser::reset(sinsp_evt &evt) const {
 	// todo!: at the end of we work we should remove the enter/exit distinction and ideally we
 	//   should set the fdinfos directly here and return if they are not present.
 	if(PPME_IS_ENTER(etype)) {
+		auto &le = m_lastevent_by_tid[tinfo->m_tid];
+		le.fd = -1;
+		le.type = etype;
+
+		// Also write to tinfo for filter engine backward compat (atomic, TSAN-safe)
 		tinfo->set_lastevent_fd(-1);
 		tinfo->set_lastevent_type(etype);
 
@@ -431,6 +435,7 @@ bool sinsp_parser::reset(sinsp_evt &evt) const {
 			const int fd_location = get_enter_event_fd_location(static_cast<ppm_event_code>(etype));
 			ASSERT(evt.get_param_info(fd_location)->type == PT_FD);
 			auto fd_val = evt.get_param(fd_location)->as<int64_t>();
+			le.fd = fd_val;
 			tinfo->set_lastevent_fd(fd_val);
 			evt.set_fd_info(tinfo->get_fd(fd_val));
 		}
@@ -439,16 +444,14 @@ bool sinsp_parser::reset(sinsp_evt &evt) const {
 
 	// note: if an "execveat" call is successful, we receive an "execveat" enter event followed by
 	// an "execve" exit event.
-	if(etype == PPME_SYSCALL_EXECVE_19_X &&
-	   tinfo->get_lastevent_type() == PPME_SYSCALL_EXECVEAT_E) {
+	auto &le = m_lastevent_by_tid[tinfo->m_tid];
+	if(etype == PPME_SYSCALL_EXECVE_19_X && le.type == PPME_SYSCALL_EXECVEAT_E) {
 		tinfo->set_lastevent_data_validity(true);
-	} else if(etype == tinfo->get_lastevent_type() + 1) {
+	} else if(etype == le.type + 1) {
 		tinfo->set_lastevent_data_validity(true);
 	} else {
+		le.invalidate();
 		tinfo->set_lastevent_data_validity(false);
-		// We cannot be sure that the lastevent_fd is something valid, it could be the socket of
-		// the previous `socket` syscall, or it could be something completely unrelated, for now
-		// we don't trust it in any case.
 		tinfo->set_lastevent_fd(-1);
 	}
 
@@ -470,16 +473,17 @@ bool sinsp_parser::reset(sinsp_evt &evt) const {
 	//
 
 	// todo!: this should become the unique logic when we'll disable the enter events.
-	if(tinfo->get_lastevent_fd() == -1) {
+	if(le.fd == -1) {
 		if(const int fd_location = get_exit_event_fd_location(static_cast<ppm_event_code>(etype));
 		   fd_location != -1 && static_cast<uint32_t>(fd_location) < evt.get_num_params()) {
 			if(const auto fd_param = evt.get_param(fd_location); !fd_param->empty()) {
-				tinfo->set_lastevent_fd(fd_param->as<int64_t>());
+				le.fd = fd_param->as<int64_t>();
+				tinfo->set_lastevent_fd(le.fd);
 			}
 		}
 	}
 
-	const auto fdinfo = tinfo->get_fd(tinfo->get_lastevent_fd());
+	const auto fdinfo = tinfo->get_fd(le.fd);
 	evt.set_fd_info(fdinfo);
 	if(fdinfo == nullptr) {
 		return false;
@@ -494,36 +498,26 @@ bool sinsp_parser::reset(sinsp_evt &evt) const {
 
 void sinsp_parser::store_event(sinsp_evt &evt) const {
 	if(evt.get_tinfo() == nullptr) {
-		// No thread in the table. We won't store this event, which mean that we could not be able
-		// to parse the corresponding exit event, and we'll have to drop the information it carries.
 		if(m_params->m_sinsp_stats_v2 != nullptr) {
 			m_params->m_sinsp_stats_v2->get_thread_counters().inc_n_store_evts_drops();
 		}
 		return;
 	}
 
-	// Make sure the event data is going to fit.
 	const auto evt_len = scap_event_getlen(evt.get_scap_evt());
-
 	if(evt_len > SP_EVT_BUF_SIZE) {
 		ASSERT(false);
 		return;
 	}
 
-	// Copy the data.
-	auto *const tinfo = evt.get_tinfo();
-	auto *last_event_data = tinfo->get_last_event_data();
-	if(last_event_data != nullptr) {
-		free(last_event_data);
-	}
-	last_event_data = static_cast<uint8_t *>(malloc(sizeof(uint8_t) * evt_len));
-	tinfo->set_last_event_data(last_event_data);
-	if(tinfo->get_last_event_data() == nullptr) {
+	auto &le = m_lastevent_by_tid[evt.get_tinfo()->m_tid];
+	free(le.data);
+	le.data = static_cast<uint8_t *>(malloc(sizeof(uint8_t) * evt_len));
+	if(le.data == nullptr) {
 		throw sinsp_exception("cannot reserve event buffer in sinsp_parser::store_event.");
-		return;
 	}
-	memcpy(tinfo->get_last_event_data(), evt.get_scap_evt(), evt_len);
-	tinfo->set_lastevent_cpuid(evt.get_cpuid());
+	memcpy(le.data, evt.get_scap_evt(), evt_len);
+	le.cpuid = evt.get_cpuid();
 
 	if(m_params->m_sinsp_stats_v2 != nullptr) {
 		m_params->m_sinsp_stats_v2->get_thread_counters().inc_n_stored_evts();
@@ -531,30 +525,19 @@ void sinsp_parser::store_event(sinsp_evt &evt) const {
 }
 
 bool sinsp_parser::retrieve_enter_event(sinsp_evt &enter_evt, sinsp_evt &exit_evt) const {
-	//
-	// Make sure there's a valid thread info
-	//
 	if(!exit_evt.get_tinfo()) {
 		return false;
 	}
 
-	//
-	// Retrieve the copy of the enter event and initialize it
-	//
-	if(!(exit_evt.get_tinfo()->is_lastevent_data_valid() &&
-	     exit_evt.get_tinfo()->get_last_event_data())) {
-		//
-		// This happen especially at the beginning of trace files, where events
-		// can be truncated
-		//
+	auto it = m_lastevent_by_tid.find(exit_evt.get_tinfo()->m_tid);
+	if(it == m_lastevent_by_tid.end() || !it->second.is_valid() || it->second.data == nullptr) {
 		if(m_params->m_sinsp_stats_v2 != nullptr) {
 			m_params->m_sinsp_stats_v2->get_thread_counters().inc_n_retrieve_evts_drops();
 		}
 		return false;
 	}
 
-	enter_evt.init_from_raw(exit_evt.get_tinfo()->get_last_event_data(),
-	                        exit_evt.get_tinfo()->get_lastevent_cpuid());
+	enter_evt.init_from_raw(it->second.data, it->second.cpuid);
 
 	/* The `execveat` syscall is a wrapper of `execve`, when the call
 	 * succeeds the event returned is simply an `execve` exit event.
@@ -573,13 +556,8 @@ bool sinsp_parser::retrieve_enter_event(sinsp_evt &enter_evt, sinsp_evt &exit_ev
 		return true;
 	}
 
-	//
-	// Make sure that we're using the right enter event, to prevent inconsistencies when events
-	// are dropped
-	//
 	if(enter_evt.get_type() != (exit_evt.get_type() - 1)) {
-		// ASSERT(false);
-		exit_evt.get_tinfo()->set_lastevent_data_validity(false);
+		it->second.invalidate();
 		if(m_params->m_sinsp_stats_v2 != nullptr) {
 			m_params->m_sinsp_stats_v2->get_thread_counters().inc_n_retrieve_evts_drops();
 		}
@@ -2641,6 +2619,7 @@ void sinsp_parser::parse_accept_exit(sinsp_evt &evt, sinsp_parser_verdict &verdi
 	}
 
 	// Update the last event fd. It's needed by the filtering engine.
+	m_lastevent_by_tid[evt.get_tinfo()->m_tid].fd = fd;
 	evt.get_tinfo()->set_lastevent_fd(fd);
 
 	// Extract the address.
@@ -2739,7 +2718,7 @@ void sinsp_parser::parse_close_exit(sinsp_evt &evt, sinsp_parser_verdict &verdic
 		}
 
 		erase_fd_params eparams;
-		eparams.m_fd = evt.get_tinfo()->get_lastevent_fd();
+		eparams.m_fd = get_lastevent(evt.get_tinfo()->m_tid).fd;
 		eparams.m_fdinfo = evt.get_fd_info();
 		eparams.m_remove_from_table = true;
 		eparams.m_tinfo = evt.get_tinfo();
@@ -3310,12 +3289,13 @@ void sinsp_parser::parse_read_exit(sinsp_evt &evt, sinsp_parser_verdict &verdict
 		}
 		auto *const data_ptr = data_param->data();
 		const auto data_len = data_param->len();
-		verdict.add_post_process_cbs([data_ptr, data_len](sinsp_observer *observer,
-		                                                  sinsp_evt *evt) {
+		const auto lastevent_fd = get_lastevent(evt.get_tinfo()->m_tid).fd;
+		verdict.add_post_process_cbs([data_ptr, data_len, lastevent_fd](sinsp_observer *observer,
+		                                                                sinsp_evt *evt) {
 			const auto original_len = static_cast<uint32_t>(evt->get_syscall_return_value());
 			observer->on_read(evt,
 			                  evt->get_tid(),
-			                  evt->get_tinfo()->get_lastevent_fd(),
+			                  lastevent_fd,
 			                  evt->get_fd_info(),
 			                  data_ptr,
 			                  original_len,
@@ -3440,12 +3420,13 @@ void sinsp_parser::parse_write_exit(sinsp_evt &evt, sinsp_parser_verdict &verdic
 		}
 		auto *const data_ptr = data_param->data();
 		const auto data_len = data_param->len();
-		verdict.add_post_process_cbs([data_ptr, data_len](sinsp_observer *observer,
-		                                                  sinsp_evt *evt) {
+		const auto lastevent_fd = get_lastevent(evt.get_tinfo()->m_tid).fd;
+		verdict.add_post_process_cbs([data_ptr, data_len, lastevent_fd](sinsp_observer *observer,
+		                                                                sinsp_evt *evt) {
 			const auto original_len = static_cast<uint32_t>(evt->get_syscall_return_value());
 			observer->on_write(evt,
 			                   evt->get_tid(),
-			                   evt->get_tinfo()->get_lastevent_fd(),
+			                   lastevent_fd,
 			                   evt->get_fd_info(),
 			                   data_ptr,
 			                   original_len,

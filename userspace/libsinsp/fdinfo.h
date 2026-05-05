@@ -27,7 +27,35 @@ limitations under the License.
 
 #include <unordered_map>
 #include <memory>
+#include <atomic>
 #include <libsinsp/packed_data.h>
+
+// std::atomic<bool> is not copyable, but sinsp_fdinfo_impl needs defaulted
+// copy/move. This wrapper loads/stores with relaxed ordering on copy so the
+// rest of the class can stay = default.
+struct copyable_atomic_flag {
+	std::atomic<bool> v{false};
+
+	copyable_atomic_flag() = default;
+	explicit copyable_atomic_flag(bool b): v(b) {}
+	copyable_atomic_flag(const copyable_atomic_flag& o): v(o.v.load(std::memory_order_relaxed)) {}
+	copyable_atomic_flag& operator=(const copyable_atomic_flag& o) {
+		v.store(o.v.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		return *this;
+	}
+	copyable_atomic_flag(copyable_atomic_flag&& o) noexcept:
+	        v(o.v.load(std::memory_order_relaxed)) {}
+	copyable_atomic_flag& operator=(copyable_atomic_flag&& o) noexcept {
+		v.store(o.v.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		return *this;
+	}
+
+	void store(bool b, std::memory_order mo = std::memory_order_seq_cst) { v.store(b, mo); }
+	bool load(std::memory_order mo = std::memory_order_seq_cst) const { return v.load(mo); }
+	bool exchange(bool b, std::memory_order mo = std::memory_order_seq_cst) {
+		return v.exchange(b, mo);
+	}
+};
 
 // fd type characters
 #define CHAR_FD_FILE 'f'
@@ -134,9 +162,7 @@ public:
 	}
 
 	inline bool consume_name_changed() {
-		bool changed = m_name_changed;
-		m_name_changed = false;
-		return changed;
+		return m_name_changed.exchange(false, std::memory_order_relaxed);
 	}
 
 	// --- Thread-safe getters (return by value, shared_lock) ---
@@ -204,7 +230,7 @@ public:
 	}
 	inline void set_name_locked(std::string n) {
 		m_name = std::move(n);
-		m_name_changed = true;
+		m_name_changed.store(true, std::memory_order_relaxed);
 	}
 	inline void set_name_raw(std::string n) {
 		std::unique_lock l(m_mutex.m);
@@ -540,7 +566,7 @@ private:
 	std::string m_name;
 	std::string m_name_raw;
 	std::string m_oldname;
-	bool m_name_changed = false;
+	copyable_atomic_flag m_name_changed;
 	uint32_t m_flags = FLAGS_NONE;
 	uint32_t m_dev = 0;
 	uint32_t m_mount_id = 0;

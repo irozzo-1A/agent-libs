@@ -56,7 +56,7 @@ uint8_t* sinsp_filter_check_group::extract_single(sinsp_evt* evt,
 	switch(m_field_id) {
 	case TYPE_GID:
 		m_gid = tinfo->get_gid();
-		RETURN_EXTRACT_VAR(m_gid);
+		return extract_single_val(m_gid, len);
 	case TYPE_NAME: {
 		auto container_id = m_inspector->m_plugin_tables.get_container_id(*tinfo);
 		if(!m_inspector->m_usergroup_manager->with_group(

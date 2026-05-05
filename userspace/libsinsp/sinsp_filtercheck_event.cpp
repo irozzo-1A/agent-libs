@@ -900,7 +900,7 @@ uint8_t* sinsp_filter_check_event::extract_single(sinsp_evt* evt,
 			         "%09llu",
 			         (evt->get_ts() - first_ts) % ONE_SECOND_IN_NS);
 			m_strstorage += string(timebuffer);
-			RETURN_EXTRACT_STRING(m_strstorage);
+			return extract_single_string(m_strstorage, len, sanitize_strings);
 		}
 
 		case 'd': {

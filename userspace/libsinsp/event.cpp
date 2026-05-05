@@ -585,7 +585,8 @@ int sinsp_evt::render_fd_json(Json::Value *ret,
 			// Make sure we remove invalid characters from the resolved name
 			//
 			std::string sanitized_storage;
-			const auto sanitized_name = sanitize_string(fdinfo->get_name(), sanitized_storage);
+			const std::string name = fdinfo->get_name();
+			const auto sanitized_name = sanitize_string(name, sanitized_storage);
 
 			(*ret)["typechar"] = typestr;
 			(*ret)["name"] = sanitized_name.data();
@@ -658,7 +659,8 @@ char *sinsp_evt::render_fd(const int64_t fd, const char ** /*resolved_str*/, con
 			// Make sure we remove invalid characters from the resolved name
 			//
 			std::string sanitized_storage;
-			const auto sanitized_name = sanitize_string(fdinfo->get_name(), sanitized_storage);
+			const std::string name = fdinfo->get_name();
+			const auto sanitized_name = sanitize_string(name, sanitized_storage);
 
 			//
 			// Make sure the string will fit

@@ -229,8 +229,10 @@ public:
 		set_name_locked(std::move(n));
 	}
 	inline void set_name_locked(std::string n) {
-		m_name = std::move(n);
-		m_name_changed.store(true, std::memory_order_relaxed);
+		if(m_name != n) {
+			m_name = std::move(n);
+			m_name_changed.store(true, std::memory_order_relaxed);
+		}
 	}
 	inline void set_name_raw(std::string n) {
 		std::unique_lock l(m_mutex.m);

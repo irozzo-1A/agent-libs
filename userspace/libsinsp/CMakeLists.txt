@@ -246,6 +246,12 @@ set(SINSP_PKG_CONFIG_INCLUDES "")
 foreach(sinsp_include_directory ${LIBSINSP_INCLUDE_DIRS})
 	list(APPEND SINSP_PKG_CONFIG_INCLUDES -I${sinsp_include_directory})
 endforeach()
+get_target_property(_sinsp_pub_defs sinsp INTERFACE_COMPILE_DEFINITIONS)
+if(_sinsp_pub_defs)
+	foreach(_def ${_sinsp_pub_defs})
+		list(APPEND SINSP_PKG_CONFIG_INCLUDES -D${_def})
+	endforeach()
+endif()
 
 file(RELATIVE_PATH PKGCONFIG_RELATIVE_PREFIX
 	 ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/pkgconfig ${CMAKE_INSTALL_PREFIX}

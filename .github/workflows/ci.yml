@@ -199,8 +199,7 @@ jobs:
             -DBUILD_SHARED_LIBS=True \
             -DUSE_BUNDLED_DEPS=False \
             -DCMAKE_INSTALL_PREFIX=/tmp/libs-test \
-            -DENABLE_THREAD_POOL=ON \
-            -DENABLE_MULTI_THREAD=ON
+            -DENABLE_THREAD_POOL=ON
           cmake --build build --target run-unit-tests --parallel $(nproc)
 
       - name: Install
@@ -264,7 +263,6 @@ jobs:
             -DUSE_BUNDLED_VALIJSON=ON \
             -DUSE_BUNDLED_BS_THREADPOOL=ON \
             -DENABLE_THREAD_POOL=ON \
-            -DENABLE_MULTI_THREAD=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCREATE_TEST_TARGETS=OFF \
             -DCMAKE_INSTALL_PREFIX=/tmp/libs-test

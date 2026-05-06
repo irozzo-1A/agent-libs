@@ -15,6 +15,8 @@
 
 option(USE_BUNDLED_FMT "Enable building of the bundled fmt" ${USE_BUNDLED_DEPS})
 
+include(ExternalProjectToolchain)
+
 if(FMT_INCLUDE_DIR)
 	# we already have fmt
 elseif(NOT USE_BUNDLED_FMT)
@@ -39,23 +41,22 @@ else()
 			set(_FMT_LIB_BASENAME "fmtd")
 		endif()
 	endif()
-	set(FMT_LIB "${FMT_SRC}/build/${FMT_LIB_PREFIX}${_FMT_LIB_BASENAME}${FMT_LIB_SUFFIX}")
+	set(FMT_BUILD_DIR "${PROJECT_BINARY_DIR}/fmt-prefix/build")
+	set(FMT_LIB "${FMT_BUILD_DIR}/${FMT_LIB_PREFIX}${_FMT_LIB_BASENAME}${FMT_LIB_SUFFIX}")
 
 	if(NOT TARGET fmt)
 		message(STATUS "Using bundled fmt in '${FMT_SRC}'")
+		falcosecurity_external_project_cache_args(FMT_EXTERNAL_PROJECT_CACHE_ARGS)
+
 		ExternalProject_Add(
 			fmt
 			PREFIX "${PROJECT_BINARY_DIR}/fmt-prefix"
 			URL "https://github.com/fmtlib/fmt/archive/refs/tags/10.2.1.tar.gz"
 			URL_HASH "SHA256=1250e4cc58bf06ee631567523f48848dc4596133e163f02615c97f78bab6c811"
-			BUILD_IN_SOURCE 1
-			BUILD_COMMAND ${CMAKE_COMMAND} --build build --target fmt
-			CMAKE_ARGS ""
-			CONFIGURE_COMMAND
-				${CMAKE_COMMAND} -S . -B build -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-				-DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-				-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER} -DFMT_DOC=OFF -DFMT_TEST=OFF
-				-DFMT_INSTALL=OFF
+			BINARY_DIR "${FMT_BUILD_DIR}"
+			CMAKE_ARGS -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DFMT_DOC=OFF -DFMT_TEST=OFF
+					   -DFMT_INSTALL=OFF
+			CMAKE_CACHE_ARGS ${FMT_EXTERNAL_PROJECT_CACHE_ARGS}
 			BUILD_BYPRODUCTS ${FMT_LIB}
 			INSTALL_COMMAND ""
 		)

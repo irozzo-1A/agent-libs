@@ -144,6 +144,10 @@ set(SINSP_PKGCONFIG_REQUIRES_PRIVATE re2)
 if(NOT EMSCRIPTEN)
 	target_link_libraries(sinsp PRIVATE "${TBB_LIB}")
 	list(APPEND SINSP_PKGCONFIG_REQUIRES_PRIVATE tbb)
+endif()
+
+if(ENABLE_MULTI_THREAD)
+	target_compile_definitions(sinsp PUBLIC ENABLE_MULTI_THREAD)
 	if(NOT WIN32)
 		# Folly ConcurrentHashMap for thread-safe thread manager (see
 		# proposals/20260212-thread-safe-thread-manager.md and cmake/modules/folly.cmake)
@@ -154,10 +158,6 @@ if(NOT EMSCRIPTEN)
 			target_compile_options(sinsp PRIVATE -Wno-sign-compare)
 		endif()
 	endif()
-endif()
-
-if(ENABLE_MULTI_THREAD)
-	target_compile_definitions(sinsp PUBLIC ENABLE_MULTI_THREAD)
 endif()
 
 if(USE_BUNDLED_VALIJSON)
